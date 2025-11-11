@@ -129,90 +129,156 @@ class ETLUseCase:
 
     def _execute_etl(self, config: dict):
         """Execute ETL steps without lock management."""
-        logger.info("Step 1/5: Extract - Retrieving raw data from source")
+        total_steps = self._calculate_total_steps()
+        step_number = 1
+
+        raw_data = self._execute_extract(step_number, total_steps)
+        step_number += 1
+
+        series_last_dates = self._load_state(config)
+        data = self._execute_parse(raw_data, config, series_last_dates, step_number, total_steps)
+        step_number += 1
+
+        data = self._execute_normalize(data, config, step_number, total_steps)
+        step_number += 1
+
+        data = self._execute_transform(data, config, step_number, total_steps)
+        step_number += 1
+
+        self._execute_load(data, config, step_number, total_steps)
+
+        logger.info("ETL pipeline completed. Total data points processed: %d", len(data))
+        return data
+
+    def _calculate_total_steps(self) -> int:
+        """Calculate total number of ETL steps."""
+        steps = 5  # Extract, Parse, Normalize, Transform, Load
+        if self._projection_use_case:
+            steps += 1
+        return steps
+
+    def _execute_extract(self, step_number: int, total_steps: int) -> bytes:
+        """Execute extract step."""
+        logger.info("Step %d/%d: Extract - Retrieving raw data from source", step_number, total_steps)
         raw_data = self._extractor.extract()
         logger.info("Extracted %d bytes of raw data", len(raw_data))
+        return raw_data
 
-        series_last_dates = None
-        if self._state_manager:
-            logger.info("Loading state for incremental processing")
-            series_last_dates = self._state_manager.get_series_last_dates(config)
-            if series_last_dates:
-                logger.info("Found state for %d series", len(series_last_dates))
-            else:
-                logger.info("No previous state found, processing all data")
+    def _load_state(self, config: dict) -> Optional[dict]:
+        """Load state for incremental processing."""
+        if not self._state_manager:
+            return None
 
-        logger.info("Step 2/5: Parse - Converting raw data to structured format")
+        logger.info("Loading state for incremental processing")
+        series_last_dates = self._state_manager.get_series_last_dates(config)
+        if series_last_dates:
+            logger.info("Found state for %d series", len(series_last_dates))
+        else:
+            logger.info("No previous state found, processing all data")
+        return series_last_dates
+
+    def _execute_parse(self, raw_data: bytes, config: dict, series_last_dates: Optional[dict], step_number: int, total_steps: int) -> list:
+        """Execute parse step."""
+        logger.info("Step %d/%d: Parse - Converting raw data to structured format", step_number, total_steps)
         data = self._parser.parse(raw_data, config, series_last_dates) if self._parser else []
         logger.info("Parsed %d data points", len(data))
+        return data
 
+    def _execute_normalize(self, data: list, config: dict, step_number: int, total_steps: int) -> list:
+        """Execute normalize step."""
         if self._normalizer:
-            logger.info("Step 3/5: Normalize - Standardizing data structure")
+            logger.info("Step %d/%d: Normalize - Standardizing data structure", step_number, total_steps)
             data = self._normalizer.normalize(data, config)
             logger.info("Normalized %d data points", len(data))
             if self._state_manager:
                 logger.info("Saving state after normalization")
                 self._state_manager.save_dates_from_data(data)
         else:
-            logger.info("Step 3/5: Normalize - Skipped (no normalizer configured)")
+            logger.info("Step %d/%d: Normalize - Skipped (no normalizer configured)", step_number, total_steps)
+        return data
 
+    def _execute_transform(self, data: list, config: dict, step_number: int, total_steps: int) -> list:
+        """Execute transform step."""
         if self._transformer:
-            logger.info("Step 4/5: Transform - Enriching data with metadata")
+            logger.info("Step %d/%d: Transform - Enriching data with metadata", step_number, total_steps)
             data = self._transformer.transform(data, config)
             logger.info("Transformed %d data points", len(data))
         else:
-            logger.info("Step 4/5: Transform - Skipped (no transformer configured)")
+            logger.info("Step %d/%d: Transform - Skipped (no transformer configured)", step_number, total_steps)
+        return data
 
+    def _execute_load(self, data: list, config: dict, step_number: int, total_steps: int) -> None:
+        """Execute load step and projection if configured."""
         if self._loader:
-            step_count = "6" if self._projection_use_case else "5"
-            logger.info("Step 5/%s: Load - Persisting data to destination", step_count)
+            logger.info("Step %d/%d: Load - Persisting data to destination", step_number, total_steps)
             self._loader.load(data, config)
             logger.info("Data loaded successfully")
 
             if self._projection_use_case:
-                self._execute_projection(config)
+                projection_step = step_number + 1
+                self._execute_projection(config, projection_step, total_steps)
         else:
-            logger.info("Step 5/5: Load - Skipped (no loader configured)")
+            logger.info("Step %d/%d: Load - Skipped (no loader configured)", step_number, total_steps)
 
-        logger.info("ETL pipeline completed. Total data points processed: %d", len(data))
-        return data
-
-    def _execute_projection(self, config: dict) -> None:
+    def _execute_projection(self, config: dict, step_number: int, total_steps: int) -> None:
         """Execute projection after successful load.
 
         Args:
             config: Configuration dictionary containing dataset_id and bucket.
+            step_number: Current step number for logging.
+            total_steps: Total number of steps for logging.
         """
-        from src.infrastructure.versioning import VersionManager
-
         dataset_id = config.get("dataset_id", "default")
-        bucket = config.get("load", {}).get("bucket")
-        aws_region = config.get("load", {}).get("aws_region", "us-east-1")
+        load_config = config.get("load", {})
+        bucket = load_config.get("bucket")
+        aws_region = load_config.get("aws_region", "us-east-1")
 
         if not bucket:
             logger.warning("Cannot execute projection: bucket not found in config")
             return
 
-        logger.info("Step 6/6: Project - Executing projection for dataset %s", dataset_id)
+        logger.info("Step %d/%d: Project - Executing projection for dataset %s", step_number, total_steps, dataset_id)
 
         try:
-            s3_client = getattr(self._loader, "_s3_client", None)
-            version_manager = VersionManager(
-                bucket=bucket, s3_client=s3_client, aws_region=aws_region
-            )
-            version_id = version_manager.get_current_version(dataset_id)
-
+            version_id = self._get_current_version_id(bucket, aws_region, dataset_id)
             if not version_id:
-                logger.warning(
-                    "Cannot execute projection: no current version found for dataset %s",
-                    dataset_id,
-                )
+                return
+
+            if not self._projection_use_case:
+                logger.warning("Projection use case not configured")
                 return
 
             logger.info("Executing projection for version %s", version_id)
-            if self._projection_use_case:
-                self._projection_use_case.execute_projection(version_id, dataset_id)
-                logger.info("Projection completed successfully")
+            self._projection_use_case.execute_projection(version_id, dataset_id)
+            logger.info("Projection completed successfully")
         except Exception as e:
             logger.error("Failed to execute projection: %s", e)
             raise
+
+    def _get_current_version_id(self, bucket: str, aws_region: str, dataset_id: str) -> Optional[str]:
+        """Get current version ID from VersionManager.
+
+        Args:
+            bucket: S3 bucket name.
+            aws_region: AWS region.
+            dataset_id: Dataset identifier.
+
+        Returns:
+            Version ID or None if not found.
+        """
+        from src.infrastructure.versioning import VersionManager
+
+        s3_client = getattr(self._loader, "_s3_client", None)
+        version_manager = VersionManager(
+            bucket=bucket, s3_client=s3_client, aws_region=aws_region
+        )
+        version_id = version_manager.get_current_version(dataset_id)
+
+        if not version_id:
+            logger.warning(
+                "Cannot execute projection: no current version found for dataset %s",
+                dataset_id,
+            )
+            return None
+
+        return version_id
