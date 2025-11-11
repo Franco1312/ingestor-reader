@@ -135,7 +135,7 @@ class TestS3VersionedLoader:
             mock_set_version.assert_called_once_with("test_dataset", "v20240115_143022")
 
     def test_load_handles_empty_data(self, loader, config):
-        """Test that load handles empty data gracefully."""
+        """Test that load skips version creation when data is empty."""
         with (
             patch.object(loader._version_manager, "create_new_version") as mock_create_version,  # type: ignore[attr-defined]
             patch.object(loader._parquet_writer, "write_to_parquet") as mock_write,  # type: ignore[attr-defined]
@@ -143,13 +143,11 @@ class TestS3VersionedLoader:
             patch.object(loader._manifest_manager, "save_manifest"),  # type: ignore[attr-defined]
             patch.object(loader._s3_client, "upload_file"),  # type: ignore[attr-defined]
         ):
-            mock_create_version.return_value = "v20240115_143022"
-            mock_write.return_value = []
-
             loader.load([], config)
 
-            assert mock_create_version.called
-            assert mock_create_manifest.called
+            assert not mock_create_version.called
+            assert not mock_write.called
+            assert not mock_create_manifest.called
 
     def test_init_requires_config(self):
         """Test that __init__ requires configuration."""

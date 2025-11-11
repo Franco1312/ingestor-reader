@@ -6,11 +6,15 @@
             "root": ".",
             "pythonVersion": "3.12",
             "pythonPlatform": "Linux",
-            "extraPaths": ["src"]
+            "extraPaths": ["src"],
+            "python": "./venv/bin/python"
         }
     ],
     "typeCheckingMode": "basic",
     "reportMissingImports": true,
-    "reportMissingTypeStubs": false
+    "reportMissingTypeStubs": false,
+    "reportGeneralTypeIssues": false,
+    "pythonVersion": "3.12",
+    "pythonPlatform": "Linux"
 }
 

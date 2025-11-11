@@ -60,6 +60,10 @@ class S3VersionedLoader(Loader):
             data: List of transformed data point dictionaries.
             config: Configuration dictionary (same as passed to __init__).
         """
+        if not data:
+            logger.info("No data to load, skipping version creation")
+            return
+
         logger.info("Loading %d data points to S3 with versioning", len(data))
         logger.info("Target bucket: %s, Dataset: %s", self._bucket, self._dataset_id)
 

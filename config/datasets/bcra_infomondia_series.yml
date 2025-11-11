@@ -22,6 +22,9 @@ load:
   aws_region: us-east-1
   partition_strategy: series_year_month
   compression: snappy
+  projection:
+    copy_workers: 10
+    merge_workers: 5
 state:
   kind: file
   state_file: state.json

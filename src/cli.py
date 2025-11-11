@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 
 from src.application.etl_use_case import ETLUseCase
 from src.application.plugin_registry import PluginRegistry
+from src.application.projection_use_case import ProjectionUseCase
 from src.domain.interfaces import (
     Extractor,
     Loader,
@@ -23,6 +24,7 @@ from src.domain.interfaces import (
 from src.infrastructure.config_loader import YamlConfigLoader
 from src.infrastructure.lock_managers.lock_manager_factory import LockManagerFactory
 from src.infrastructure.plugins import create_plugin_registry
+from src.infrastructure.projections.projection_manager import ProjectionManager
 from src.infrastructure.state_managers.state_manager_factory import StateManagerFactory
 
 
@@ -144,6 +146,46 @@ def _get_lock_manager(config: Dict[str, Any]) -> Optional[LockManager]:
     return LockManagerFactory.create(lock_config)
 
 
+def _get_projection_use_case(
+    config: Dict[str, Any], loader: Optional[Loader]
+) -> Optional[ProjectionUseCase]:
+    """Get projection use case if loader is configured.
+
+    Args:
+        config: Configuration dictionary.
+        loader: Loader instance (optional).
+
+    Returns:
+        ProjectionUseCase instance or None if loader is not configured.
+    """
+    if not loader:
+        return None
+
+    load_config = config.get("load", {})
+    bucket = load_config.get("bucket")
+    aws_region = load_config.get("aws_region", "us-east-1")
+
+    if not bucket:
+        return None
+
+    projection_config = load_config.get("projection", {})
+    copy_workers = projection_config.get("copy_workers", 1)
+    merge_workers = projection_config.get("merge_workers", 1)
+
+    try:
+        s3_client = getattr(loader, "_s3_client", None)
+        projection_manager = ProjectionManager(
+            bucket=bucket,
+            s3_client=s3_client,
+            aws_region=aws_region,
+            copy_workers=copy_workers,
+            merge_workers=merge_workers,
+        )
+        return ProjectionUseCase(projection_manager=projection_manager)
+    except AttributeError:
+        return None
+
+
 def _execute_etl_pipeline(dataset_id: str) -> int:
     """Execute ETL pipeline for a dataset without error handling.
 
@@ -179,6 +221,9 @@ def _execute_etl_pipeline(dataset_id: str) -> int:
     state_manager = _get_state_manager(config)
     lock_manager = _get_lock_manager(config)
 
+    # Create projection use case if loader is configured
+    projection_use_case = _get_projection_use_case(config, loader)
+
     # Create ETL use case
     etl = ETLUseCase(
         extractor=extractor,
@@ -188,6 +233,7 @@ def _execute_etl_pipeline(dataset_id: str) -> int:
         loader=loader,
         state_manager=state_manager,
         lock_manager=lock_manager,
+        projection_use_case=projection_use_case,
     )
 
     data = etl.execute(config)
@@ -273,6 +319,7 @@ def main():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("botocore").setLevel(logging.WARNING)
     logging.getLogger("boto3").setLevel(logging.WARNING)
+    logging.getLogger("s3transfer").setLevel(logging.WARNING)
 
     parser = argparse.ArgumentParser(
         description="Run ETL pipeline for a dataset",
