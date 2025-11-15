@@ -76,13 +76,37 @@ jobs:
           container-name: etl-container
           image: ${{ steps.build-image.outputs.image }}
 
-      - name: Deploy Amazon ECS task definition
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
+      - name: Register new task definition revision
+        run: |
+          echo '${{ steps.task-def.outputs.task-definition }}' > new-task-definition.json
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-definition.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "Task Definition registered: $TASK_DEF_ARN"
+
+      - name: Deploy to ECS Service (if exists)
+        id: deploy-service
+        continue-on-error: true
+        run: |
+          if aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].status' \
+            --output text 2>/dev/null | grep -q "ACTIVE"; then
+            echo "Service exists, updating..."
+            aws ecs update-service \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service ${{ env.ECS_SERVICE }} \
+              --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+              --force-new-deployment \
+              --query 'service.serviceName' \
+              --output text
+            echo "Service updated"
+          else
+            echo "Service ${{ env.ECS_SERVICE }} does not exist, skipping service update"
+            echo "Task Definition registered but no service to update"
+          fi
 
       - name: Run ECS Task (if dataset_id provided)
         if: ${{ github.event.inputs.dataset_id != '' }}
