@@ -48,6 +48,7 @@ class StateManagerFactory:
                 key=key,
                 aws_access_key_id=state_config.get("aws_access_key_id"),
                 aws_secret_access_key=state_config.get("aws_secret_access_key"),
+                aws_region=state_config.get("aws_region", "us-east-1"),
             )
 
         # This should never happen with proper enum usage, but kept for defensive programming
