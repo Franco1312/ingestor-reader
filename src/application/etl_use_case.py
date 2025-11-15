@@ -87,7 +87,7 @@ class ETLUseCase:
         """Get lock manager instance (for testing)."""
         return self._lock_manager
 
-    def sexecute(self, config: Optional[dict] = None):
+    def execute(self, config: Optional[dict] = None):
         """Execute the complete ETL process.
 
         Args:
