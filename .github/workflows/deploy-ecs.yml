@@ -78,9 +78,9 @@ jobs:
 
       - name: Register new task definition revision
         run: |
-          echo '${{ steps.task-def.outputs.task-definition }}' > new-task-definition.json
+          TASK_DEF_FILE="${{ steps.task-def.outputs.task-definition }}"
           TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://new-task-definition.json \
+            --cli-input-json file://$TASK_DEF_FILE \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
           echo "Task Definition registered: $TASK_DEF_ARN"
