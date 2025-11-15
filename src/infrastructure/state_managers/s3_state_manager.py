@@ -37,6 +37,7 @@ class S3StateManager(StateManagerInterface):
         self._bucket = bucket
         self._key = key
         self._aws_region = aws_region
+        self._state_cache: Optional[Dict[str, str]] = None  # Cache for state to avoid multiple S3 calls
         
         # Create S3 client
         if aws_access_key_id and aws_secret_access_key:
@@ -82,14 +83,16 @@ class S3StateManager(StateManagerInterface):
                     series_max_dates[series_code] = obs_time_naive
         
         if series_max_dates:
-            state = self._load()
+            state = self._get_state()
             for series_code, max_date in series_max_dates.items():
                 state[series_code] = max_date.isoformat()
             self._save(state)
+            # Invalidate cache after saving
+            self._state_cache = None
 
     def get_last_date(self, series_code: str) -> Optional[datetime]:
         """Get last processed date for a series (always naive)."""
-        state = self._load()
+        state = self._get_state()
         date_str = state.get(series_code)
         if not date_str:
             return None
@@ -101,12 +104,19 @@ class S3StateManager(StateManagerInterface):
             logger.warning("Invalid date format in state for series %s: %s", series_code, date_str)
             return None
 
+    def _get_state(self) -> Dict[str, str]:
+        """Get state from cache or load from S3."""
+        if self._state_cache is None:
+            self._state_cache = self._load()
+        return self._state_cache
+
     def _load(self) -> Dict[str, str]:
         """Load state from S3."""
         try:
             response = self._s3_client.get_object(Bucket=self._bucket, Key=self._key)
             content = response["Body"].read().decode("utf-8").strip()
             if not content:
+                logger.info("State file not found in S3, starting fresh")
                 return {}
             return json.loads(content)
         except ClientError as e:
