@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ingestor-reader:latest
+    environment:
+      - DATASET_ID=${DATASET_ID:-bcra_infomondia_series}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - SNS_PROJECTION_TOPIC_ARN=${SNS_PROJECTION_TOPIC_ARN}
+    volumes:
+      # Mount config directory if you want to modify configs without rebuilding
+      - ./config:/app/config:ro
+    # Override entrypoint to pass dataset_id as argument if needed
+    # command: ["bcra_infomondia_series"]
+

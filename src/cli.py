@@ -235,24 +235,15 @@ def _execute_etl_pipeline(dataset_id: str) -> int:
         OSError: If I/O operations fail.
         TypeError: If type errors occur.
     """
-    # Initialize plugin registry with all available plugins
     registry = create_plugin_registry()
-
-    # Load configuration
     config = _get_config(dataset_id)
-
-    # Create components from registry
     extractor = _get_extractor(registry, config)
     parser = _get_parser(registry, config)
     normalizer = _get_normalizer(registry, config)
     transformer = _get_transformer(registry, config)
     loader = _get_loader(registry, config)
-
-    # Create managers from factories
     state_manager = _get_state_manager(config)
     lock_manager = _get_lock_manager(config)
-
-    # Create projection use case if loader is configured
     projection_use_case = _get_projection_use_case(config, loader)
 
     # Create ETL use case

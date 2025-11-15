@@ -205,6 +205,174 @@ SNS_PROJECTION_TOPIC_ARN=arn:aws:sns:us-east-1:123456789012:projection-updates
 - Integration tests verify end-to-end pipeline execution
 - Run tests with: `pytest tests/ -v`
 
+## Deployment
+
+### ECS + Fargate Deployment
+
+The application is containerized and can be deployed to AWS ECS using Fargate.
+
+#### Building the Docker Image
+
+```bash
+docker build -t ingestor-reader:latest .
+```
+
+#### Running Locally with Docker
+
+```bash
+# Using command line argument
+docker run --rm \
+  -e AWS_ACCESS_KEY_ID=your-key \
+  -e AWS_SECRET_ACCESS_KEY=your-secret \
+  -e AWS_REGION=us-east-1 \
+  ingestor-reader:latest bcra_infomondia_series
+
+# Using environment variable
+docker run --rm \
+  -e DATASET_ID=bcra_infomondia_series \
+  -e AWS_ACCESS_KEY_ID=your-key \
+  -e AWS_SECRET_ACCESS_KEY=your-secret \
+  -e AWS_REGION=us-east-1 \
+  ingestor-reader:latest
+```
+
+#### ECS Task Definition Example
+
+Create an ECS Task Definition with the following configuration:
+
+```json
+{
+  "family": "ingestor-reader",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "etl-container",
+      "image": "your-ecr-repo/ingestor-reader:latest",
+      "essential": true,
+      "environment": [
+        {
+          "name": "DATASET_ID",
+          "value": "bcra_infomondia_series"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "SNS_PROJECTION_TOPIC_ARN",
+          "value": "arn:aws:sns:us-east-1:123456789012:projection-updates"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ingestor-reader",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "taskRoleArn": "arn:aws:iam::123456789012:role/ecsTaskRole",
+  "executionRoleArn": "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+}
+```
+
+**Important IAM Permissions:**
+
+The ECS Task Role needs permissions for:
+- S3 read/write access (for data loading and state management)
+- DynamoDB read/write access (for lock management)
+- SNS publish permissions (for projection notifications, if configured)
+
+Example IAM policy:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::your-bucket-name/*",
+        "arn:aws:s3:::your-bucket-name"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:UpdateItem"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/your-lock-table"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sns:Publish"
+      ],
+      "Resource": "arn:aws:sns:us-east-1:123456789012:projection-updates"
+    }
+  ]
+}
+```
+
+#### Triggering ECS Tasks
+
+You can trigger ECS tasks using:
+
+1. **EventBridge (CloudWatch Events)**: Schedule periodic runs
+2. **SQS**: Process messages from a queue
+3. **AWS CLI**: Manual execution
+   ```bash
+   aws ecs run-task \
+     --cluster your-cluster-name \
+     --task-definition ingestor-reader \
+     --launch-type FARGATE \
+     --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=ENABLED}"
+   ```
+
+4. **EventBridge Rule**: Trigger on S3 events or other AWS events
+5. **Step Functions**: Orchestrate multiple ETL tasks
+
+#### CI/CD Deployment
+
+The project includes GitHub Actions workflows for automated deployment:
+
+**Workflows:**
+- `test.yml`: Runs tests on PRs and pushes
+- `build-image.yml`: Validates Docker build on PRs
+- `deploy-ecs.yml`: Automatically deploys to ECS on push to main/master
+
+**Setup:**
+1. Configure GitHub Secrets:
+   - `AWS_ACCESS_KEY_ID`
+   - `AWS_SECRET_ACCESS_KEY`
+   - `ECS_SUBNET_IDS` (comma-separated)
+   - `ECS_SECURITY_GROUP_IDS` (comma-separated)
+
+2. Update environment variables in `.github/workflows/deploy-ecs.yml`:
+   - `AWS_REGION`
+   - `ECR_REPOSITORY`
+   - `ECS_CLUSTER`
+   - `ECS_TASK_DEFINITION`
+
+3. Create initial ECR repository and ECS resources
+
+**Deployment Flow:**
+- Push to main/master → Tests → Build → Push to ECR → Deploy to ECS
+- Pull Request → Tests → Validate Docker build (no deployment)
+
+
 ## Architecture Principles
 
 - **Clean Architecture**: Separation of domain, application, and infrastructure layers

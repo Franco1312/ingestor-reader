@@ -1,0 +1,25 @@
+{
+  "family": "ingestor-reader",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "etl-container",
+      "image": "706341500093.dkr.ecr.us-east-1.amazonaws.com/ingestor-reader:latest",
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ingestor-reader",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "taskRoleArn": "arn:aws:iam::706341500093:role/ecsTaskRole",
+  "executionRoleArn": "arn:aws:iam::706341500093:role/ecsTaskExecutionRole"
+}
+

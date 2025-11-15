@@ -1,15 +1,25 @@
-# Use AWS Lambda Python base image
-FROM public.ecr.aws/lambda/python:3.12
+# Use standard Python base image for ECS/Fargate
+FROM python:3.12-slim
 
-WORKDIR ${LAMBDA_TASK_ROOT}
+WORKDIR /app
 
-COPY requirements.txt ${LAMBDA_TASK_ROOT}/
+# Install system dependencies if needed (currently none, but ready for future needs)
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#     <package-name> \
+#     && rm -rf /var/lib/apt/lists/*
 
+# Copy and install Python dependencies
+COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/ ${LAMBDA_TASK_ROOT}/src/
-COPY config/ ${LAMBDA_TASK_ROOT}/config/
-COPY lambda_handler.py ${LAMBDA_TASK_ROOT}/
+# Copy application code
+COPY src/ /app/src/
+COPY config/ /app/config/
 
-CMD [ "lambda_handler.lambda_handler" ]
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Set entrypoint
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
