@@ -87,9 +87,9 @@ El manifest de la versión contiene información detallada sobre los datos proye
     "min_obs_time": "2024-01-01T00:00:00Z",
     "max_obs_time": "2024-01-15T00:00:00Z"
   },
-  "parquet_files": [
-    "data/BCRA_TC_OFICIAL_A3500_PESOSxUSD_D/year=2024/month=01/data.parquet",
-    "data/BCRA_RESERVAS_D/year=2024/month=01/data.parquet",
+  "json_files": [
+    "data/BCRA_TC_OFICIAL_A3500_PESOSxUSD_D/year=2024/month=01/data.json",
+    "data/BCRA_RESERVAS_D/year=2024/month=01/data.json",
     ...
   ],
   "partitions": [
@@ -113,7 +113,7 @@ El manifest de la versión contiene información detallada sobre los datos proye
 - `date_range`: Rango de fechas de los datos
   - `min_obs_time`: Fecha mínima de observación (ISO 8601, puede ser `null`)
   - `max_obs_time`: Fecha máxima de observación (ISO 8601, puede ser `null`)
-- `parquet_files`: Lista de rutas relativas a los archivos parquet generados
+- `json_files`: Lista de rutas relativas a los archivos JSON generados
 - `partitions`: Lista de particiones afectadas (ej: `"SERIES_CODE/year=2024/month=01"`)
 - `partition_strategy`: Nombre de la estrategia de partición usada (ej: `"series_year_month"`)
 
@@ -127,14 +127,13 @@ Con la información del evento, los consumidores pueden:
    - Rango de fechas (`date_range`)
    - Particiones afectadas (`partitions`)
 3. **Listar archivos en projections** usando `projections_path` como prefijo
-4. **Leer archivos parquet** directamente desde las proyecciones
+4. **Leer archivos JSON** directamente desde las proyecciones
 
 ### Ejemplo de Consumidor
 
 ```python
 import json
 import boto3
-import pyarrow.parquet as pq
 
 # Parsear mensaje SNS
 message = json.loads(sns_message)
@@ -157,9 +156,11 @@ partitions = manifest.get("partitions", [])
 # Listar archivos en projections
 response = s3.list_objects_v2(Bucket=bucket, Prefix=projections_path)
 for obj in response.get("Contents", []):
-    if obj["Key"].endswith(".parquet"):
-        # Leer archivo parquet
-        table = pq.read_table(f"s3://{bucket}/{obj['Key']}")
+    if obj["Key"].endswith(".json"):
+        # Leer archivo JSON
+        import json
+        response_obj = s3.get_object(Bucket=bucket, Key=obj["Key"])
+        data = json.loads(response_obj["Body"].read().decode("utf-8"))
         # Procesar datos...
 ```
 

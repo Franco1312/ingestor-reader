@@ -1,5 +1,13 @@
 """Command-line interface for running ETL pipelines."""
 
+# Load environment variables from .env file FIRST, before any other imports
+from pathlib import Path
+from dotenv import load_dotenv
+
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=True)
+
 import argparse
 import logging
 import os

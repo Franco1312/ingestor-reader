@@ -13,12 +13,12 @@ datasets/{dataset_id}/
 │
 └── versions/
     └── {version_id}/               # Ej: v20240115_143022, v1, v2, etc.
-        ├── data/                   # Archivos parquet particionados
+        ├── data/                   # Archivos JSON particionados
         │   ├── {internal_series_code}/
         │   │   ├── year=2024/
         │   │   │   ├── month=01/
-        │   │   │   │   ├── part-00000.parquet
-        │   │   │   │   └── part-00001.parquet
+        │   │   │   │   ├── part-00000.JSON
+        │   │   │   │   └── part-00001.JSON
         │   │   │   └── month=02/
         │   │   │       └── ...
         │   │   └── year=2023/
@@ -88,7 +88,7 @@ grouped = strategy.group_by_partition(data_list)
 ```
 
 **Reutilización**:
-- Usado por `ParquetWriter` para escribir datos particionados
+- Usado por `JSONWriter` para escribir datos particionados
 - Usado por futuros componentes de proyección (mismo factory, misma estrategia)
 - Centralizado para evitar duplicación de lógica
 
@@ -129,9 +129,9 @@ grouped = strategy.group_by_partition(data_list)
     "data_points_added": 234,
     "data_points_updated": 0
   },
-  "parquet_files": [
-    "data/BCRA_TC_OFICIAL_A3500_PESOSxUSD_D/year=2024/month=01/part-00000.parquet",
-    "data/BCRA_TC_OFICIAL_A3500_PESOSxUSD_D/year=2024/month=02/part-00000.parquet",
+  "json_files": [
+    "data/BCRA_TC_OFICIAL_A3500_PESOSxUSD_D/year=2024/month=01/part-00000.JSON",
+    "data/BCRA_TC_OFICIAL_A3500_PESOSxUSD_D/year=2024/month=02/part-00000.JSON",
     ...
   ],
   "partitions": [
@@ -150,24 +150,22 @@ grouped = strategy.group_by_partition(data_list)
 - `load_manifest(bucket: str, dataset_id: str, version_id: str) -> Dict`: Carga un manifest existente
 - `compare_with_previous(current_data: List[Dict], previous_manifest: Dict) -> Dict`: Genera el changelog comparando con versión anterior
 
-### 4. **ParquetWriter** (`src/infrastructure/versioning/parquet_writer.py`)
-**Responsabilidad**: Escribir datos a formato Parquet de manera eficiente con particionamiento
+### 4. **JSONWriter** (`src/infrastructure/storage/json/json_writer.py`)
+**Responsabilidad**: Escribir datos a formato JSON de manera eficiente con particionamiento
 
 **Consideraciones**:
-- Usar `pyarrow` o `pandas` para escribir parquet
+- Usar `json` estándar de Python para escribir JSON
 - **Siempre usa particionamiento** según la `PartitionStrategy` configurada para el dataset
-- Compresión: `snappy` (default) o `gzip` (más compresión, más lento)
-- Schema: Definir schema explícito para consistencia
+- Serializa datetime objects a ISO format strings
 - Recibe `PartitionStrategy` como parámetro (creada por el factory según config)
 
 **Operaciones**:
-- `write_to_parquet(data: List[Dict], base_output_path: str, partition_strategy: PartitionStrategy) -> List[str]`: 
+- `write_to_json(data: List[Dict], base_output_path: str) -> List[str]`: 
   - Agrupa datos por partición usando `partition_strategy.group_by_partition()`
-  - Escribe un archivo parquet por partición (o múltiples partes si hay muchos datos en una partición)
+  - Escribe un archivo JSON por partición
   - Retorna lista de paths relativos de archivos generados
-- `get_schema() -> pyarrow.Schema`: Retorna el schema esperado
 
-**Estructura de datos en Parquet**:
+**Estructura de datos en JSON**:
 - Columnas: `obs_time`, `internal_series_code`, `value`, `unit`, `frequency`, `collection_date`
 - Tipos: `obs_time` (timestamp), `internal_series_code` (string), `value` (double), `unit` (string), `frequency` (string), `collection_date` (timestamp)
 - **Nota**: Las columnas `year` y `month` NO se incluyen en el schema (son parte del path de partición)
@@ -179,8 +177,8 @@ grouped = strategy.group_by_partition(data_list)
 1. Recibe datos transformados del ETL y la configuración
 2. Crea `PartitionStrategy` usando `PartitionStrategyFactory.create(config)` según la config del dataset
 3. Crea nueva versión con `VersionManager`
-4. Escribe datos a Parquet con `ParquetWriter` (pasando la `PartitionStrategy` creada)
-5. Sube archivos Parquet a S3 en `datasets/{dataset_id}/versions/{version_id}/data/{partitions}/`
+4. Escribe datos a JSON con `JSONWriter` (pasando la `PartitionStrategy` creada)
+5. Sube archivos JSON a S3 en `datasets/{dataset_id}/versions/{version_id}/data/{partitions}/`
 6. Genera manifest con `ManifestManager` (comparando con versión anterior si existe)
    - El manifest incluye la lista de particiones y archivos generados
    - El manifest también incluye qué `partition_strategy` se usó
@@ -217,7 +215,7 @@ load:
 - La comparación puede ser costosa si hay muchos datos → hacerlo a nivel de manifest/metadata, no cargando todos los datos
 
 ### 3. **Manejo de Errores**
-- Si falla la escritura de Parquet: rollback (eliminar versión parcial)
+- Si falla la escritura de JSON: rollback (eliminar versión parcial)
 - Si falla el upload a S3: retry con exponential backoff
 - Si falla la actualización del puntero: la versión existe pero no está "activa" (requiere intervención manual o retry)
 
@@ -237,7 +235,7 @@ load:
 ## Dependencias
 
 - `boto3`: Ya presente en el proyecto
-- `pyarrow` o `pandas`: Para escribir Parquet (agregar a requirements.txt)
+- `json`: Estándar de Python (para escribir JSON)
 - `pytz`: Ya presente (para timestamps)
 
 ## Integración con ETL Actual

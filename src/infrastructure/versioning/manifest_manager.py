@@ -30,7 +30,7 @@ class ManifestManager:
         version_id: str,
         dataset_id: str,
         data: List[Dict[str, Any]],
-        parquet_files: List[str],
+        json_files: List[str],
         partitions: List[str],
         partition_strategy: str,
     ) -> Dict[str, Any]:
@@ -40,7 +40,7 @@ class ManifestManager:
             version_id: Version identifier.
             dataset_id: Dataset identifier.
             data: List of data point dictionaries.
-            parquet_files: List of relative paths to parquet files.
+            json_files: List of relative paths to JSON files.
             partitions: List of partition paths.
             partition_strategy: Partition strategy name used.
 
@@ -83,7 +83,7 @@ class ManifestManager:
                     max_obs_time.strftime("%Y-%m-%dT%H:%M:%SZ") if max_obs_time else None
                 ),
             },
-            "parquet_files": parquet_files,
+            "json_files": json_files,
             "partitions": partitions,
             "partition_strategy": partition_strategy,
         }

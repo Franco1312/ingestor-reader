@@ -33,64 +33,64 @@ class StagingManager:
         self._copy_workers = copy_workers
 
     def copy_from_version(
-        self, version_id: str, dataset_id: str, parquet_files: List[str]
+        self, version_id: str, dataset_id: str, json_files: List[str]
     ) -> List[str]:
-        """Copy parquet files from a version to staging.
+        """Copy JSON files from a version to staging.
 
         Args:
             version_id: Version identifier.
             dataset_id: Dataset identifier.
-            parquet_files: List of relative parquet file paths.
+            json_files: List of relative JSON file paths.
 
         Returns:
             List of staging paths where files were copied.
         """
-        if not parquet_files:
+        if not json_files:
             logger.info("No files to copy for version %s", version_id)
             return []
 
-        self._log_copy_start(version_id, dataset_id, len(parquet_files))
-        staging_paths = self._copy_all_files(version_id, dataset_id, parquet_files)
+        self._log_copy_start(version_id, dataset_id, len(json_files))
+        staging_paths = self._copy_all_files(version_id, dataset_id, json_files)
         self._log_copy_complete(len(staging_paths))
         return staging_paths
 
     def _copy_all_files(
-        self, version_id: str, dataset_id: str, parquet_files: List[str]
+        self, version_id: str, dataset_id: str, json_files: List[str]
     ) -> List[str]:
         """Copy all files from version to staging.
 
         Args:
             version_id: Version identifier.
             dataset_id: Dataset identifier.
-            parquet_files: List of relative parquet file paths.
+            json_files: List of relative JSON file paths.
 
         Returns:
             List of staging paths where files were copied.
         """
-        return self._copy_all_files_parallel(version_id, dataset_id, parquet_files)
+        return self._copy_all_files_parallel(version_id, dataset_id, json_files)
 
     def _copy_all_files_parallel(
-        self, version_id: str, dataset_id: str, parquet_files: List[str]
+        self, version_id: str, dataset_id: str, json_files: List[str]
     ) -> List[str]:
         """Copy all files in parallel using ThreadPoolExecutor."""
-        total_files = len(parquet_files)
+        total_files = len(json_files)
         logger.info("Copying %d files in parallel with %d workers", total_files, self._copy_workers)
 
         staging_paths = []
         completed_count = 0
 
-        def copy_single_file(parquet_file: str) -> str:
+        def copy_single_file(json_file: str) -> str:
             """Copy a single file and return destination key."""
-            source_key = self._build_version_file_path(dataset_id, version_id, parquet_file)
-            dest_key = self._build_staging_file_path(dataset_id, parquet_file)
+            source_key = self._build_version_file_path(dataset_id, version_id, json_file)
+            dest_key = self._build_staging_file_path(dataset_id, json_file)
             self._log_file_copy(source_key, dest_key)
             self._copy_s3_object(source_key, dest_key)
             return dest_key
 
         with ThreadPoolExecutor(max_workers=self._copy_workers) as executor:
             future_to_file = {
-                executor.submit(copy_single_file, parquet_file): parquet_file
-                for parquet_file in parquet_files
+                executor.submit(copy_single_file, json_file): json_file
+                for json_file in json_files
             }
 
             for future in as_completed(future_to_file):
@@ -100,8 +100,8 @@ class StagingManager:
                     dest_key = future.result()
                     staging_paths.append(dest_key)
                 except Exception as e:
-                    parquet_file = future_to_file[future]
-                    logger.error("Failed to copy file %s: %s", parquet_file, e)
+                    json_file = future_to_file[future]
+                    logger.error("Failed to copy file %s: %s", json_file, e)
                     raise
 
         return staging_paths
@@ -184,30 +184,30 @@ class StagingManager:
             logger.debug("Deleting: %s", key)
             self._delete_s3_object(key)
 
-    def _build_version_file_path(self, dataset_id: str, version_id: str, parquet_file: str) -> str:
+    def _build_version_file_path(self, dataset_id: str, version_id: str, json_file: str) -> str:
         """Build S3 key path for a file in a version.
 
         Args:
             dataset_id: Dataset identifier.
             version_id: Version identifier.
-            parquet_file: Relative parquet file path.
+            json_file: Relative JSON file path.
 
         Returns:
             Full S3 key path.
         """
-        return f"datasets/{dataset_id}/versions/{version_id}/data/{parquet_file}"
+        return f"datasets/{dataset_id}/versions/{version_id}/data/{json_file}"
 
-    def _build_staging_file_path(self, dataset_id: str, parquet_file: str) -> str:
+    def _build_staging_file_path(self, dataset_id: str, json_file: str) -> str:
         """Build S3 key path for a file in staging.
 
         Args:
             dataset_id: Dataset identifier.
-            parquet_file: Relative parquet file path.
+            json_file: Relative JSON file path.
 
         Returns:
             Full S3 key path.
         """
-        return f"datasets/{dataset_id}/staging/{parquet_file}"
+        return f"datasets/{dataset_id}/staging/{json_file}"
 
     def _build_staging_prefix(self, dataset_id: str) -> str:
         """Build S3 prefix for staging area.
@@ -301,7 +301,7 @@ class StagingManager:
             Set of unique partition paths.
 
         Example:
-            Key: datasets/test/staging/SERIES_1/year=2024/month=01/data.parquet
+            Key: datasets/test/staging/SERIES_1/year=2024/month=01/data.json
             Prefix: datasets/test/staging/
             Result: SERIES_1/year=2024/month=01
         """
@@ -332,7 +332,7 @@ class StagingManager:
         """Get partition path from relative file path.
 
         Args:
-            relative_path: Relative path (e.g., "SERIES_1/year=2024/month=01/data.parquet").
+            relative_path: Relative path (e.g., "SERIES_1/year=2024/month=01/data.json").
 
         Returns:
             Partition path without filename (e.g., "SERIES_1/year=2024/month=01").

@@ -26,18 +26,18 @@ datasets/{dataset_id}/
 │   └── {version_id}/
 │       ├── data/
 │       │   └── {internal_series_code}/year={YYYY}/month={MM}/
-│       │       └── data.parquet
+│       │       └── data.json
 │       └── manifest.json
 ├── staging/                          # Área temporal para merge
 │   └── {internal_series_code}/
 │       └── year={YYYY}/
 │           └── month={MM}/
-│               └── data.parquet     # Datos nuevos a mergear
+│               └── data.json     # Datos nuevos a mergear
 └── projections/                     # Datos finales para consumidores
     └── {internal_series_code}/
         └── year={YYYY}/
             └── month={MM}/
-                └── data.parquet     # Datos mergeados (histórico + nuevos)
+                └── data.json     # Datos mergeados (histórico + nuevos)
 ```
 
 **Nota**: La estructura de partición en `staging/` y `projections/` es idéntica a la de `versions/`, usando la misma `PartitionStrategy` configurada para el dataset.
@@ -57,7 +57,7 @@ datasets/{dataset_id}/
   - Limpia staging
 
 **Flujo interno**:
-1. `_copy_version_to_staging()`: Copia parquet files de versión a staging
+1. `_copy_version_to_staging()`: Copia JSON files de versión a staging
 2. `_merge_staging_with_projections()`: Mergea datos de staging con projections
 3. `_atomic_move_to_projections()`: Mueve staging a projections de forma atómica
 4. `_cleanup_staging()`: Elimina staging después del movimiento exitoso
@@ -67,8 +67,8 @@ datasets/{dataset_id}/
 **Responsabilidad**: Gestionar el área de staging
 
 **Operaciones**:
-- `copy_from_version(version_id: str, dataset_id: str, parquet_files: List[str]) -> List[str]`:
-  - Copia archivos parquet de una versión a staging
+- `copy_from_version(version_id: str, dataset_id: str, json_files: List[str]) -> List[str]`:
+  - Copia archivos JSON de una versión a staging
   - Retorna lista de paths en staging
   
 - `list_staging_partitions(dataset_id: str) -> List[str]`:
@@ -172,9 +172,9 @@ datasets/{dataset_id}/
 - **Política**: "First write wins" (se mantiene el dato original)
 
 **Implementación**:
-- Leer parquet de projections (si existe)
-- Leer parquet de staging
-- Filtrar duplicados usando pandas/pyarrow
+- Leer JSON de projections (si existe)
+- Leer JSON de staging
+- Filtrar duplicados usando comparación directa de diccionarios
 - Escribir resultado mergeado
 
 ### 3. **Particionamiento Consistente**
@@ -189,7 +189,7 @@ datasets/{dataset_id}/
 - Merge partición por partición (paralelizable)
 - Usar operaciones batch de S3 cuando sea posible
 - Cachear listas de particiones para evitar múltiples list_objects
-- Considerar compresión (ya configurada en ParquetWriter)
+- Considerar compresión (ya configurada en JSONWriter)
 
 ### 5. **Idempotencia**
 
@@ -203,7 +203,7 @@ datasets/{dataset_id}/
 **Opciones**:
 - **Opción A**: Guardar lista de versiones proyectadas en `projections/manifest.json`
 - **Opción B**: No trackear, confiar en deduplicación
-- **Opción C**: Guardar metadata en cada archivo parquet (no recomendado)
+- **Opción C**: Guardar metadata en cada archivo JSON (no recomendado)
 
 **Recomendación**: Opción A - mantener un manifest en projections con:
 ```json
@@ -226,27 +226,27 @@ Después de load() exitoso:
 
 ### Paso 2: Copiar Versión a Staging
 ```
-versions/{version_id}/data/{partition}/data.parquet
-  → staging/{partition}/data.parquet
+versions/{version_id}/data/{partition}/data.json
+  → staging/{partition}/data.json
 ```
 
 ### Paso 3: Merge Staging con Projections
 ```
 Para cada partición en staging:
-  1. Leer projections/{partition}/data.parquet (si existe)
-  2. Leer staging/{partition}/data.parquet
+  1. Leer projections/{partition}/data.json (si existe)
+  2. Leer staging/{partition}/data.json
   3. Detectar duplicados (obs_time + internal_series_code)
   4. Filtrar duplicados de staging
   5. Concatenar: projections_data + staging_new_data
-  6. Escribir resultado a staging/{partition}/data.parquet (sobrescribir)
+  6. Escribir resultado a staging/{partition}/data.json (sobrescribir)
 ```
 
 ### Paso 4: Atomic Move
 ```
 Para cada archivo en staging:
-  1. Copiar staging/{partition}/data.parquet → projections/{partition}/data.parquet
+  1. Copiar staging/{partition}/data.json → projections/{partition}/data.json
   2. Si todas las copias OK:
-     - Eliminar staging/{partition}/data.parquet
+     - Eliminar staging/{partition}/data.json
   3. Si alguna copia falla:
      - Eliminar todas las copias hechas
      - Mantener staging intacto

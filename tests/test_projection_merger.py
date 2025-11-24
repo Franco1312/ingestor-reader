@@ -5,8 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+import json
 import pytest
 
 from src.infrastructure.projections.projection_merger import ProjectionMerger
@@ -73,43 +72,21 @@ class TestProjectionMerger:
             },
         ]
 
-    def _create_parquet_file(self, data: list, file_path: Path) -> None:
-        """Helper to create a parquet file from data."""
-        schema = self._get_schema()
-        arrays = {
-            "obs_time": [dp["obs_time"] for dp in data],
-            "internal_series_code": [dp["internal_series_code"] for dp in data],
-            "value": [dp["value"] for dp in data],
-            "unit": [dp["unit"] for dp in data],
-            "frequency": [dp["frequency"] for dp in data],
-            "collection_date": [dp["collection_date"] for dp in data],
-        }
-        pa_arrays = [
-            pa.array(arrays["obs_time"], type=schema.field("obs_time").type),
-            pa.array(
-                arrays["internal_series_code"], type=schema.field("internal_series_code").type
-            ),
-            pa.array(arrays["value"], type=schema.field("value").type),
-            pa.array(arrays["unit"], type=schema.field("unit").type),
-            pa.array(arrays["frequency"], type=schema.field("frequency").type),
-            pa.array(arrays["collection_date"], type=schema.field("collection_date").type),
-        ]
-        table = pa.Table.from_arrays(pa_arrays, schema=schema)
-        pq.write_table(table, str(file_path))
-
-    @staticmethod
-    def _get_schema() -> pa.Schema:
-        """Get PyArrow schema."""
-        return pa.schema(
-            [
-                pa.field("obs_time", pa.timestamp("ns")),
-                pa.field("internal_series_code", pa.string()),
-                pa.field("value", pa.float64()),
-                pa.field("unit", pa.string()),
-                pa.field("frequency", pa.string()),
-                pa.field("collection_date", pa.timestamp("ns")),
-            ]
-        )
+    def _create_json_file(self, data: list, file_path: Path) -> None:
+        """Helper to create a JSON file from data."""
+        # Serialize datetime objects to ISO format strings
+        json_data = []
+        for item in data:
+            json_item = {}
+            for key, value in item.items():
+                if isinstance(value, datetime):
+                    json_item[key] = value.isoformat()
+                else:
+                    json_item[key] = value
+            json_data.append(json_item)
+        
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False)
 
     def test_merge_partition_with_no_existing_projection(
         self, projection_merger, mock_s3_client, sample_data_staging
@@ -118,12 +95,12 @@ class TestProjectionMerger:
         dataset_id = "test_dataset"
         partition_path = "SERIES_1/year=2024/month=01"
 
-        staging_key = f"datasets/{dataset_id}/staging/{partition_path}/data.parquet"
+        staging_key = f"datasets/{dataset_id}/staging/{partition_path}/data.json"
 
         # Mock S3: staging exists, projections don't
         with tempfile.TemporaryDirectory() as tmpdir:
-            staging_file = Path(tmpdir) / "staging.parquet"
-            self._create_parquet_file(sample_data_staging, staging_file)
+            staging_file = Path(tmpdir) / "staging.json"
+            self._create_json_file(sample_data_staging, staging_file)
 
             def download_file(_Bucket, Key, Filename):  # noqa: N803
                 if Key == staging_key:
@@ -159,8 +136,8 @@ class TestProjectionMerger:
         dataset_id = "test_dataset"
         partition_path = "SERIES_1/year=2024/month=01"
 
-        staging_key = f"datasets/{dataset_id}/staging/{partition_path}/data.parquet"
-        projections_key = f"datasets/{dataset_id}/projections/{partition_path}/data.parquet"
+        staging_key = f"datasets/{dataset_id}/staging/{partition_path}/data.json"
+        projections_key = f"datasets/{dataset_id}/projections/{partition_path}/data.json"
 
         # Add duplicate: same obs_time and series_code as existing projection
         duplicate_data = [
@@ -178,10 +155,10 @@ class TestProjectionMerger:
         staging_with_duplicate = sample_data_staging + duplicate_data
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            staging_file = Path(tmpdir) / "staging.parquet"
-            projections_file = Path(tmpdir) / "projections.parquet"
-            self._create_parquet_file(staging_with_duplicate, staging_file)
-            self._create_parquet_file(sample_data_projections, projections_file)
+            staging_file = Path(tmpdir) / "staging.json"
+            projections_file = Path(tmpdir) / "projections.json"
+            self._create_json_file(staging_with_duplicate, staging_file)
+            self._create_json_file(sample_data_projections, projections_file)
 
             def download_file(_Bucket, Key, Filename):  # noqa: N803
                 import shutil
@@ -201,8 +178,9 @@ class TestProjectionMerger:
                 uploaded_files.append((LocalFilename, Key))
                 # Read file content before it's deleted
                 if Path(LocalFilename).exists():
-                    table = pq.read_table(LocalFilename)
-                    uploaded_content.append(table)
+                    with open(LocalFilename, encoding="utf-8") as f:
+                        data = json.load(f)
+                        uploaded_content.append(data)
 
             mock_s3_client.upload_file.side_effect = capture_upload
 
@@ -214,22 +192,22 @@ class TestProjectionMerger:
             assert len(uploaded_content) == 1
 
             # Verify duplicate was removed by reading the captured content
-            table = uploaded_content[0]
+            data = uploaded_content[0]
             # Should have 3 rows: 1 from projections + 2 from staging (duplicate removed)
-            assert len(table) == 3
+            assert len(data) == 3
 
             # Verify the original value (99.0) is kept, not the duplicate (999.0)
-            # Find row with obs_time = 2024-01-14 using PyArrow
-            obs_time_col = table.column("obs_time")
-            series_col = table.column("internal_series_code")
-            value_col = table.column("value")
-            target_time = datetime(2024, 1, 14, 12, 0, 0)
+            # Find row with obs_time = 2024-01-14
+            target_time_str = datetime(2024, 1, 14, 12, 0, 0).isoformat()
 
             found_value = None
-            for i in range(len(table)):
-                if obs_time_col[i].as_py() == target_time and series_col[i].as_py() == "SERIES_1":
-                    found_value = value_col[i].as_py()
-                    break
+            for item in data:
+                obs_time = item.get("obs_time")
+                if isinstance(obs_time, str):
+                    obs_time_dt = datetime.fromisoformat(obs_time.replace("Z", "+00:00"))
+                    if obs_time_dt.replace(tzinfo=None) == datetime(2024, 1, 14, 12, 0, 0) and item.get("internal_series_code") == "SERIES_1":
+                        found_value = item.get("value")
+                        break
 
             assert found_value == 99.0  # Original value, not 999.0
 
@@ -240,14 +218,14 @@ class TestProjectionMerger:
         dataset_id = "test_dataset"
         partition_path = "SERIES_1/year=2024/month=01"
 
-        staging_key = f"datasets/{dataset_id}/staging/{partition_path}/data.parquet"
-        projections_key = f"datasets/{dataset_id}/projections/{partition_path}/data.parquet"
+        staging_key = f"datasets/{dataset_id}/staging/{partition_path}/data.json"
+        projections_key = f"datasets/{dataset_id}/projections/{partition_path}/data.json"
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            staging_file = Path(tmpdir) / "staging.parquet"
-            projections_file = Path(tmpdir) / "projections.parquet"
-            self._create_parquet_file(sample_data_staging, staging_file)
-            self._create_parquet_file(sample_data_projections, projections_file)
+            staging_file = Path(tmpdir) / "staging.json"
+            projections_file = Path(tmpdir) / "projections.json"
+            self._create_json_file(sample_data_staging, staging_file)
+            self._create_json_file(sample_data_projections, projections_file)
 
             def download_file(_Bucket, Key, Filename):  # noqa: N803
                 import shutil
@@ -265,8 +243,9 @@ class TestProjectionMerger:
             def capture_upload(LocalFilename, _Bucket, _Key):  # noqa: N803
                 # Read file content before it's deleted
                 if Path(LocalFilename).exists():
-                    table = pq.read_table(LocalFilename)
-                    uploaded_content.append(table)
+                    with open(LocalFilename, encoding="utf-8") as f:
+                        data = json.load(f)
+                        uploaded_content.append(data)
 
             mock_s3_client.upload_file.side_effect = capture_upload
 
@@ -274,17 +253,17 @@ class TestProjectionMerger:
 
             # Verify merged data contains both old and new
             assert len(uploaded_content) > 0
-            table = uploaded_content[0]
+            data = uploaded_content[0]
             # Should have 3 rows: 1 from projections + 2 from staging
-            assert len(table) == 3
+            assert len(data) == 3
 
     def test_merge_partition_handles_empty_staging(self, projection_merger, mock_s3_client):
         """Test merge when staging is empty (should keep projections as-is)."""
         dataset_id = "test_dataset"
         partition_path = "SERIES_1/year=2024/month=01"
 
-        staging_key = f"datasets/{dataset_id}/staging/{partition_path}/data.parquet"
-        projections_key = f"datasets/{dataset_id}/projections/{partition_path}/data.parquet"
+        staging_key = f"datasets/{dataset_id}/staging/{partition_path}/data.json"
+        projections_key = f"datasets/{dataset_id}/projections/{partition_path}/data.json"
 
         # Mock: staging doesn't exist, projections exist
         def head_object(**kwargs):  # noqa: N803
@@ -299,7 +278,7 @@ class TestProjectionMerger:
         mock_s3_client.head_object.side_effect = head_object
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            projections_file = Path(tmpdir) / "projections.parquet"
+            projections_file = Path(tmpdir) / "projections.json"
             sample_data = [
                 {
                     **DataPointBuilder()
@@ -312,7 +291,7 @@ class TestProjectionMerger:
                     "collection_date": datetime(2024, 1, 14, 14, 25, 0),
                 },
             ]
-            self._create_parquet_file(sample_data, projections_file)
+            self._create_json_file(sample_data, projections_file)
 
             def download_file(_Bucket, Key, Filename):  # noqa: N803
                 import shutil

@@ -27,19 +27,19 @@ class TestStagingManager:
         return StagingManager(bucket="test-bucket", s3_client=mock_s3_client, copy_workers=3)
 
     def test_copy_from_version_copies_single_file(self, staging_manager, mock_s3_client):
-        """Test that copy_from_version copies a single parquet file from version to staging."""
+        """Test that copy_from_version copies a single JSON file from version to staging."""
         dataset_id = "test_dataset"
         version_id = "v20240115_143022"
-        parquet_files = ["SERIES_1/year=2024/month=01/data.parquet"]
+        json_files = ["SERIES_1/year=2024/month=01/data.json"]
 
         # Mock S3 copy operation
         mock_s3_client.copy_object = Mock()
 
-        result = staging_manager.copy_from_version(version_id, dataset_id, parquet_files)
+        result = staging_manager.copy_from_version(version_id, dataset_id, json_files)
 
         # Verify copy was called with correct source and destination
-        expected_source = f"datasets/{dataset_id}/versions/{version_id}/data/{parquet_files[0]}"
-        expected_dest = f"datasets/{dataset_id}/staging/{parquet_files[0]}"
+        expected_source = f"datasets/{dataset_id}/versions/{version_id}/data/{json_files[0]}"
+        expected_dest = f"datasets/{dataset_id}/staging/{json_files[0]}"
 
         mock_s3_client.copy_object.assert_called_once_with(
             CopySource={"Bucket": "test-bucket", "Key": expected_source},
@@ -48,20 +48,20 @@ class TestStagingManager:
         )
 
         # Verify return value
-        assert result == [f"datasets/{dataset_id}/staging/{parquet_files[0]}"]
+        assert result == [f"datasets/{dataset_id}/staging/{json_files[0]}"]
 
     def test_copy_from_version_copies_multiple_files(self, staging_manager, mock_s3_client):
-        """Test that copy_from_version copies multiple parquet files."""
+        """Test that copy_from_version copies multiple JSON files."""
         dataset_id = "test_dataset"
         version_id = "v20240115_143022"
-        parquet_files = [
-            "SERIES_1/year=2024/month=01/data.parquet",
-            "SERIES_2/year=2024/month=02/data.parquet",
+        json_files = [
+            "SERIES_1/year=2024/month=01/data.json",
+            "SERIES_2/year=2024/month=02/data.json",
         ]
 
         mock_s3_client.copy_object = Mock()
 
-        result = staging_manager.copy_from_version(version_id, dataset_id, parquet_files)
+        result = staging_manager.copy_from_version(version_id, dataset_id, json_files)
 
         # Verify all files were copied
         assert mock_s3_client.copy_object.call_count == 2
@@ -91,11 +91,11 @@ class TestStagingManager:
         # Mock S3 response with multiple files in same partition
         mock_s3_client.list_objects_v2.return_value = {
             "Contents": [
-                {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet"},
+                {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json"},
                 {
-                    "Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/part-00001.parquet"
+                    "Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/part-00001.json"
                 },
-                {"Key": f"datasets/{dataset_id}/staging/SERIES_2/year=2024/month=02/data.parquet"},
+                {"Key": f"datasets/{dataset_id}/staging/SERIES_2/year=2024/month=02/data.json"},
             ]
         }
 
@@ -115,8 +115,8 @@ class TestStagingManager:
         # Mock S3 response with files
         mock_s3_client.list_objects_v2.return_value = {
             "Contents": [
-                {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet"},
-                {"Key": f"datasets/{dataset_id}/staging/SERIES_2/year=2024/month=02/data.parquet"},
+                {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json"},
+                {"Key": f"datasets/{dataset_id}/staging/SERIES_2/year=2024/month=02/data.json"},
             ]
         }
         mock_s3_client.delete_object = Mock()
@@ -197,8 +197,8 @@ class TestStagingManager:
         # Mock S3 response with a key that doesn't match the prefix
         mock_s3_client.list_objects_v2.return_value = {
             "Contents": [
-                {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet"},
-                {"Key": f"datasets/{dataset_id}/other/SERIES_2/year=2024/month=02/data.parquet"},
+                {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json"},
+                {"Key": f"datasets/{dataset_id}/other/SERIES_2/year=2024/month=02/data.json"},
             ]
         }
 
@@ -215,10 +215,10 @@ class TestStagingManager:
 
         dataset_id = "test_dataset"
         version_id = "v20240115_143022"
-        parquet_files = [
-            "SERIES_1/year=2024/month=01/data.parquet",
-            "SERIES_2/year=2024/month=02/data.parquet",
-            "SERIES_3/year=2024/month=03/data.parquet",
+        json_files = [
+            "SERIES_1/year=2024/month=01/data.json",
+            "SERIES_2/year=2024/month=02/data.json",
+            "SERIES_3/year=2024/month=03/data.json",
         ]
 
         mock_s3_client.copy_object = Mock()
@@ -234,9 +234,9 @@ class TestStagingManager:
             from concurrent.futures import Future
 
             futures = []
-            for parquet_file in parquet_files:
+            for json_file in json_files:
                 future = Future()
-                future.set_result(f"datasets/{dataset_id}/staging/{parquet_file}")
+                future.set_result(f"datasets/{dataset_id}/staging/{json_file}")
                 futures.append(future)
 
             def submit_side_effect(func, *args):
@@ -251,7 +251,7 @@ class TestStagingManager:
                 "src.infrastructure.projections.staging_manager.as_completed",
                 return_value=futures,
             ):
-                result = staging_manager_parallel.copy_from_version(version_id, dataset_id, parquet_files)
+                result = staging_manager_parallel.copy_from_version(version_id, dataset_id, json_files)
 
             # Verify ThreadPoolExecutor was created with correct workers
             mock_executor_class.assert_called_once_with(max_workers=3)
@@ -263,14 +263,14 @@ class TestStagingManager:
         """Test that copy_from_version works sequentially with 1 worker."""
         dataset_id = "test_dataset"
         version_id = "v20240115_143022"
-        parquet_files = [
-            "SERIES_1/year=2024/month=01/data.parquet",
-            "SERIES_2/year=2024/month=02/data.parquet",
+        json_files = [
+            "SERIES_1/year=2024/month=01/data.json",
+            "SERIES_2/year=2024/month=02/data.json",
         ]
 
         mock_s3_client.copy_object = Mock()
 
-        result = staging_manager.copy_from_version(version_id, dataset_id, parquet_files)
+        result = staging_manager.copy_from_version(version_id, dataset_id, json_files)
 
         # Verify all files were copied (sequential or parallel, result should be same)
         assert mock_s3_client.copy_object.call_count == 2

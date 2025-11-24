@@ -165,10 +165,10 @@ class TestPartitionStrategy:
         strategy = SeriesYearMonthPartitionStrategy()
 
         paths = [
-            "data/TEST_SERIES/year=2024/month=01/part-00000.parquet",
-            "data/TEST_SERIES/year=2024/month=01/part-00001.parquet",
-            "data/TEST_SERIES/year=2024/month=02/part-00000.parquet",
-            "data/ANOTHER_SERIES/year=2024/month=01/part-00000.parquet",
+            "data/TEST_SERIES/year=2024/month=01/part-00000.json",
+            "data/TEST_SERIES/year=2024/month=01/part-00001.json",
+            "data/TEST_SERIES/year=2024/month=02/part-00000.json",
+            "data/ANOTHER_SERIES/year=2024/month=01/part-00000.json",
             "some/other/path/file.txt",  # Should be ignored
         ]
 

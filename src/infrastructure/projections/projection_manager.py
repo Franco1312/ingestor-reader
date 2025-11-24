@@ -74,13 +74,13 @@ class ProjectionManager:
         if manifest is None:
             raise ValueError(f"Manifest not found for version {version_id}, dataset {dataset_id}")
 
-        parquet_files = manifest.get("parquet_files", [])
-        if not parquet_files:
-            logger.warning("No parquet files in manifest for version %s", version_id)
+        json_files = manifest.get("json_files", [])
+        if not json_files:
+            logger.warning("No JSON files in manifest for version %s", version_id)
             return False
 
         self._cleanup_staging(dataset_id)
-        self._copy_version_to_staging(version_id, dataset_id, parquet_files)
+        self._copy_version_to_staging(version_id, dataset_id, json_files)
         self._merge_staging_with_projections(dataset_id)
         self._atomic_move_to_projections(dataset_id)
         self._record_projected_version(version_id, dataset_id)
@@ -104,20 +104,20 @@ class ProjectionManager:
         return manifest_manager.load_manifest(dataset_id, version_id)
 
     def _copy_version_to_staging(
-        self, version_id: str, dataset_id: str, parquet_files: List[str]
+        self, version_id: str, dataset_id: str, json_files: List[str]
     ) -> None:
         """Copy version files to staging.
 
         Args:
             version_id: Version identifier.
             dataset_id: Dataset identifier.
-            parquet_files: List of parquet file paths.
+            json_files: List of JSON file paths.
         """
         logger.info("Copying version %s to staging", version_id)
         staging_manager = StagingManager(
             bucket=self._bucket, s3_client=self._s3_client, copy_workers=self._copy_workers
         )
-        staging_manager.copy_from_version(version_id, dataset_id, parquet_files)
+        staging_manager.copy_from_version(version_id, dataset_id, json_files)
 
     def _merge_staging_with_projections(self, dataset_id: str) -> None:
         """Merge staging data with existing projections.

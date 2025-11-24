@@ -1,7 +1,7 @@
 dataset_id: bcra_infomondia_series
 provider: BCRA
 frequency: D
-lag_days: 7
+windowInDays: 365
 source:
   kind: http
   url: https://www.bcra.gob.ar/Pdfs/PublicacionesEstadisticas/series.xlsm
@@ -21,18 +21,13 @@ load:
   bucket: ingestor-datasets
   aws_region: us-east-1
   partition_strategy: series_year_month
-  compression: snappy
   projection:
     copy_workers: 10
     merge_workers: 5
 state:
-  kind: s3
-  bucket: ingestor-datasets
-  key: datasets/bcra_infomondia_series/state.json
-lock:
-  kind: dynamodb
-  table_name: etl_locks
-  region_name: us-east-1
+  kind: file
+  path: datasets/bcra_infomondia_series/state.json
+lock: null
 parse_config:
   file_type: series
   header_search_max_rows: 30

@@ -53,9 +53,9 @@ class TestManifestManager:
         for dp in data:
             dp["collection_date"] = datetime(2024, 1, 15, 14, 25, 0)
 
-        parquet_files = [
-            "data/SERIES_1/year=2024/month=01/data.parquet",
-            "data/SERIES_2/year=2024/month=02/data.parquet",
+        json_files = [
+            "data/SERIES_1/year=2024/month=01/data.json",
+            "data/SERIES_2/year=2024/month=02/data.json",
         ]
         partitions = [
             "SERIES_1/year=2024/month=01",
@@ -73,7 +73,7 @@ class TestManifestManager:
                 version_id="v20240115_143022",
                 dataset_id="test_dataset",
                 data=data,
-                parquet_files=parquet_files,
+                json_files=json_files,
                 partitions=partitions,
                 partition_strategy=partition_strategy,
             )
@@ -87,7 +87,7 @@ class TestManifestManager:
             assert set(manifest["series_codes"]) == {"SERIES_1", "SERIES_2"}
             assert manifest["date_range"]["min_obs_time"] == "2024-01-15T12:00:00Z"
             assert manifest["date_range"]["max_obs_time"] == "2024-02-01T12:00:00Z"
-            assert manifest["parquet_files"] == parquet_files
+            assert manifest["json_files"] == json_files
             assert manifest["partitions"] == partitions
             assert manifest["partition_strategy"] == partition_strategy
 
@@ -103,7 +103,7 @@ class TestManifestManager:
                 version_id="v20240115_143022",
                 dataset_id="test_dataset",
                 data=[],
-                parquet_files=[],
+                json_files=[],
                 partitions=[],
                 partition_strategy="series_year_month",
             )
@@ -135,7 +135,7 @@ class TestManifestManager:
                 version_id="v20240115_143022",
                 dataset_id="test_dataset",
                 data=data,
-                parquet_files=[],
+                json_files=[],
                 partitions=[],
                 partition_strategy="series_year_month",
             )

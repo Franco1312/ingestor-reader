@@ -32,9 +32,9 @@ class TestProjectionManager:
         manifest = {
             "version_id": version_id,
             "dataset_id": dataset_id,
-            "parquet_files": [
-                "SERIES_1/year=2024/month=01/data.parquet",
-                "SERIES_2/year=2024/month=02/data.parquet",
+            "json_files": [
+                "SERIES_1/year=2024/month=01/data.json",
+                "SERIES_2/year=2024/month=02/data.json",
             ],
         }
 
@@ -60,7 +60,7 @@ class TestProjectionManager:
 
             mock_is_projected.assert_called_once_with(version_id, dataset_id)
             mock_load_manifest.assert_called_once_with(version_id, dataset_id)
-            mock_copy.assert_called_once_with(version_id, dataset_id, manifest["parquet_files"])
+            mock_copy.assert_called_once_with(version_id, dataset_id, manifest["json_files"])
             mock_merge.assert_called_once_with(dataset_id)
             mock_move.assert_called_once_with(dataset_id)
             mock_record.assert_called_once_with(version_id, dataset_id)
@@ -94,21 +94,21 @@ class TestProjectionManager:
 
         version_id = "v20240115_143022"
         dataset_id = "test_dataset"
-        parquet_files = ["SERIES_1/year=2024/month=01/data.parquet"]
+        json_files = ["SERIES_1/year=2024/month=01/data.json"]
 
         with patch(
             "src.infrastructure.projections.projection_manager.StagingManager"
         ) as mock_staging_manager_class:
             mock_staging_manager = Mock()
             mock_staging_manager.copy_from_version.return_value = [
-                "datasets/test_dataset/staging/SERIES_1/year=2024/month=01/data.parquet"
+                "datasets/test_dataset/staging/SERIES_1/year=2024/month=01/data.json"
             ]
             mock_staging_manager_class.return_value = mock_staging_manager
 
-            projection_manager._copy_version_to_staging(version_id, dataset_id, parquet_files)  # noqa: SLF001
+            projection_manager._copy_version_to_staging(version_id, dataset_id, json_files)  # noqa: SLF001
 
             mock_staging_manager.copy_from_version.assert_called_once_with(
-                version_id, dataset_id, parquet_files
+                version_id, dataset_id, json_files
             )
 
     def test_merge_staging_with_projections_calls_merger(
@@ -176,7 +176,7 @@ class TestProjectionManager:
         expected_manifest = {
             "version_id": version_id,
             "dataset_id": dataset_id,
-            "parquet_files": ["SERIES_1/year=2024/month=01/data.parquet"],
+            "json_files": ["SERIES_1/year=2024/month=01/data.json"],
         }
 
         with patch(
@@ -193,10 +193,10 @@ class TestProjectionManager:
             )
             assert result == expected_manifest
 
-    def test_project_version_handles_empty_parquet_files(
+    def test_project_version_handles_empty_json_files(
         self, projection_manager, mock_s3_client
     ):
-        """Test that project_version handles manifest with no parquet files."""
+        """Test that project_version handles manifest with no JSON files."""
         from unittest.mock import patch
 
         version_id = "v20240115_143022"
@@ -205,7 +205,7 @@ class TestProjectionManager:
         manifest = {
             "version_id": version_id,
             "dataset_id": dataset_id,
-            "parquet_files": [],
+            "json_files": [],
         }
 
         with patch.object(

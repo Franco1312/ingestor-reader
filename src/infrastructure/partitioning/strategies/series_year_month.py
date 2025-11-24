@@ -72,7 +72,7 @@ class SeriesYearMonthPartitionStrategy(PartitionStrategy):
         """Extract all unique partitions from a list of S3 paths.
 
         Args:
-            paths: List of S3 object paths (e.g., ["data/SERIES/year=2024/month=01/file.parquet"]).
+            paths: List of S3 object paths (e.g., ["data/SERIES/year=2024/month=01/file.json"]).
 
         Returns:
             Set of unique partition paths (e.g., {"SERIES/year=2024/month=01/"}).

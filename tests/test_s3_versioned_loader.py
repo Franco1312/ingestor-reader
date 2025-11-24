@@ -57,44 +57,44 @@ class TestS3VersionedLoader:
         """Test that load creates a new version."""
         with (
             patch.object(loader._version_manager, "create_new_version") as mock_create_version,
-            patch.object(loader._parquet_writer, "write_to_parquet") as mock_write,
+            patch.object(loader._json_writer, "write_to_json") as mock_write,
             patch.object(loader._manifest_manager, "create_manifest"),
             patch.object(loader._manifest_manager, "save_manifest"),
             patch.object(loader._s3_client, "upload_file"),
         ):
             mock_create_version.return_value = "v20240115_143022"
-            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.parquet"]
+            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.json"]
 
             loader.load(sample_data, config)
 
             assert mock_create_version.called
 
-    def test_load_writes_parquet_files(self, loader, config, sample_data):
-        """Test that load writes parquet files."""
+    def test_load_writes_json_files(self, loader, config, sample_data):
+        """Test that load writes JSON files."""
         with (
             patch.object(loader._version_manager, "create_new_version") as mock_create_version,
-            patch.object(loader._parquet_writer, "write_to_parquet") as mock_write,
+            patch.object(loader._json_writer, "write_to_json") as mock_write,
             patch.object(loader._manifest_manager, "create_manifest"),
             patch.object(loader._manifest_manager, "save_manifest"),
             patch.object(loader._s3_client, "upload_file"),
         ):
             mock_create_version.return_value = "v20240115_143022"
-            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.parquet"]
+            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.json"]
 
             loader.load(sample_data, config)
 
             assert mock_write.called
 
-    def test_load_uploads_parquet_files_to_s3(self, loader, mock_s3_client, config, sample_data):
-        """Test that load uploads parquet files to S3."""
+    def test_load_uploads_json_files_to_s3(self, loader, mock_s3_client, config, sample_data):
+        """Test that load uploads JSON files to S3."""
         with (
             patch.object(loader._version_manager, "create_new_version") as mock_create_version,  # type: ignore[attr-defined]
-            patch.object(loader._parquet_writer, "write_to_parquet") as mock_write,  # type: ignore[attr-defined]
+            patch.object(loader._json_writer, "write_to_json") as mock_write,  # type: ignore[attr-defined]
             patch.object(loader._manifest_manager, "create_manifest"),  # type: ignore[attr-defined]
             patch.object(loader._manifest_manager, "save_manifest"),  # type: ignore[attr-defined]
         ):
             mock_create_version.return_value = "v20240115_143022"
-            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.parquet"]
+            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.json"]
 
             loader.load(sample_data, config)
 
@@ -104,13 +104,13 @@ class TestS3VersionedLoader:
         """Test that load creates and saves manifest."""
         with (
             patch.object(loader._version_manager, "create_new_version") as mock_create_version,
-            patch.object(loader._parquet_writer, "write_to_parquet") as mock_write,
+            patch.object(loader._json_writer, "write_to_json") as mock_write,
             patch.object(loader._manifest_manager, "create_manifest") as mock_create_manifest,
             patch.object(loader._manifest_manager, "save_manifest") as mock_save_manifest,
             patch.object(loader._s3_client, "upload_file"),
         ):
             mock_create_version.return_value = "v20240115_143022"
-            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.parquet"]
+            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.json"]
 
             loader.load(sample_data, config)
 
@@ -122,13 +122,13 @@ class TestS3VersionedLoader:
         with (
             patch.object(loader._version_manager, "create_new_version") as mock_create_version,
             patch.object(loader._version_manager, "set_current_version") as mock_set_version,
-            patch.object(loader._parquet_writer, "write_to_parquet") as mock_write,
+            patch.object(loader._json_writer, "write_to_json") as mock_write,
             patch.object(loader._manifest_manager, "create_manifest"),
             patch.object(loader._manifest_manager, "save_manifest"),
             patch.object(loader._s3_client, "upload_file"),
         ):
             mock_create_version.return_value = "v20240115_143022"
-            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.parquet"]
+            mock_write.return_value = ["SERIES_1/year=2024/month=01/data.json"]
 
             loader.load(sample_data, config)
 
@@ -138,7 +138,7 @@ class TestS3VersionedLoader:
         """Test that load skips version creation when data is empty."""
         with (
             patch.object(loader._version_manager, "create_new_version") as mock_create_version,  # type: ignore[attr-defined]
-            patch.object(loader._parquet_writer, "write_to_parquet") as mock_write,  # type: ignore[attr-defined]
+            patch.object(loader._json_writer, "write_to_json") as mock_write,  # type: ignore[attr-defined]
             patch.object(loader._manifest_manager, "create_manifest") as mock_create_manifest,  # type: ignore[attr-defined]
             patch.object(loader._manifest_manager, "save_manifest"),  # type: ignore[attr-defined]
             patch.object(loader._s3_client, "upload_file"),  # type: ignore[attr-defined]

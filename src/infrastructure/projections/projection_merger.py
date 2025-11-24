@@ -1,14 +1,14 @@
 """Projection merger for merging staging data with projections."""
 
+import json
 import logging
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import boto3
-import pyarrow as pa
-import pyarrow.parquet as pq
 from botocore.exceptions import ClientError
 
 from src.infrastructure.projections.staging_manager import StagingManager
@@ -55,16 +55,16 @@ class ProjectionMerger:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Download files if they exist
-            staging_data = self._download_and_read_parquet(staging_key, tmpdir)
-            projections_data = self._download_and_read_parquet(projections_key, tmpdir)
+            staging_data = self._download_and_read_json(staging_key, tmpdir)
+            projections_data = self._download_and_read_json(projections_key, tmpdir)
 
             # Merge data
-            merged_data = self._merge_data(projections_data, staging_data)
+            merged_data = self._merge_json_data(projections_data, staging_data)
 
             # Write merged data back to staging
-            if merged_data is not None and len(merged_data) > 0:
-                output_file = Path(tmpdir) / "merged.parquet"
-                self._write_parquet(merged_data, output_file)
+            if merged_data:
+                output_file = Path(tmpdir) / "merged.json"
+                self._write_json(merged_data, output_file)
                 self._upload_to_staging(staging_key, output_file)
 
         logger.info("Successfully merged partition %s", partition_path)
@@ -117,7 +117,7 @@ class ProjectionMerger:
         Returns:
             S3 key string.
         """
-        return f"datasets/{dataset_id}/staging/{partition_path}/data.parquet"
+        return f"datasets/{dataset_id}/staging/{partition_path}/data.json"
 
     def _build_projections_file_key(self, dataset_id: str, partition_path: str) -> str:
         """Build S3 key for projections file.
@@ -129,17 +129,17 @@ class ProjectionMerger:
         Returns:
             S3 key string.
         """
-        return f"datasets/{dataset_id}/projections/{partition_path}/data.parquet"
+        return f"datasets/{dataset_id}/projections/{partition_path}/data.json"
 
-    def _download_and_read_parquet(self, s3_key: str, tmpdir: str) -> Optional[pa.Table]:
-        """Download parquet file from S3 and read it.
+    def _download_and_read_json(self, s3_key: str, tmpdir: str) -> Optional[List[Dict[str, Any]]]:
+        """Download JSON file from S3 and read it.
 
         Args:
             s3_key: S3 object key.
             tmpdir: Temporary directory path.
 
         Returns:
-            PyArrow Table with data, or None if file doesn't exist.
+            List of data dictionaries, or None if file doesn't exist.
         """
         if not self._s3_object_exists(s3_key):
             return None
@@ -147,7 +147,13 @@ class ProjectionMerger:
         local_file = Path(tmpdir) / Path(s3_key).name
         self._s3_client.download_file(self._bucket, s3_key, str(local_file))
 
-        return pq.read_table(str(local_file))
+        with open(local_file, encoding="utf-8") as f:
+            data = json.load(f)
+            # Handle both list and dict formats
+            if isinstance(data, dict):
+                # If it's a dict, assume it has a 'data' key or convert to list
+                return data.get("data", [data])
+            return data if isinstance(data, list) else []
 
     def _s3_object_exists(self, s3_key: str) -> bool:
         """Check if S3 object exists.
@@ -166,46 +172,83 @@ class ProjectionMerger:
                 return False
             raise
 
-    def _merge_data(
-        self, projections_table: Optional[pa.Table], staging_table: Optional[pa.Table]
-    ) -> Optional[pa.Table]:
+    def _merge_json_data(
+        self, projections_data: Optional[List[Dict[str, Any]]], staging_data: Optional[List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
         """Merge projections and staging data, removing duplicates.
 
         Args:
-            projections_table: Existing projections data (can be None).
-            staging_table: New staging data (can be None).
+            projections_data: Existing projections data (can be None).
+            staging_data: New staging data (can be None).
 
         Returns:
-            Merged PyArrow Table, or None if both inputs are None.
+            Merged list of data dictionaries.
         """
-        if projections_table is None and staging_table is None:
-            return None
+        if projections_data is None and staging_data is None:
+            return []
 
-        if projections_table is None:
-            return staging_table
+        if projections_data is None:
+            return staging_data or []
 
-        if staging_table is None:
-            return projections_table
+        if staging_data is None:
+            return projections_data
 
-        # Combine both tables
-        combined = pa.concat_tables([projections_table, staging_table])
+        # Combine both lists
+        combined = projections_data + staging_data
 
         # Remove duplicates based on (obs_time, internal_series_code)
-        # Convert to pandas for simpler deduplication
-        df = combined.to_pandas()
-        # Keep first occurrence (projections data takes precedence)
-        merged_df = df.drop_duplicates(subset=["obs_time", "internal_series_code"], keep="first")
-        # Convert back to table with original schema
-        return pa.Table.from_pandas(merged_df, schema=combined.schema)
+        # Keep first occurrence (projections data takes precedence since it comes first)
+        seen = set()
+        merged = []
+        for item in combined:
+            obs_time = item.get("obs_time")
+            internal_series_code = item.get("internal_series_code")
+            
+            # Convert obs_time to string for comparison if it's a datetime
+            if isinstance(obs_time, datetime):
+                obs_time_key = obs_time.isoformat()
+            else:
+                obs_time_key = str(obs_time) if obs_time else None
+            
+            key = (obs_time_key, str(internal_series_code) if internal_series_code else None)
+            if key not in seen:
+                seen.add(key)
+                merged.append(item)
 
-    def _write_parquet(self, data: pa.Table, output_file: Path) -> None:
-        """Write PyArrow Table to parquet file.
+        return merged
+
+    def _write_json(self, data: List[Dict[str, Any]], output_file: Path) -> None:
+        """Write data to JSON file.
 
         Args:
-            data: PyArrow Table to write.
+            data: List of data dictionaries to write.
             output_file: Output file path.
         """
-        pq.write_table(data, str(output_file), compression=self._compression)
+        # Convert datetime objects to ISO format strings for JSON serialization
+        json_data = self._serialize_datetimes(data)
+        
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False)
+
+    def _serialize_datetimes(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Serialize datetime objects to ISO format strings for JSON.
+
+        Args:
+            data: List of data dictionaries.
+
+        Returns:
+            List with datetime objects converted to ISO strings.
+        """
+        serialized = []
+        for item in data:
+            serialized_item = {}
+            for key, value in item.items():
+                if isinstance(value, datetime):
+                    serialized_item[key] = value.isoformat()
+                else:
+                    serialized_item[key] = value
+            serialized.append(serialized_item)
+        return serialized
 
     def _upload_to_staging(self, s3_key: str, local_file: Path) -> None:
         """Upload file to staging in S3.

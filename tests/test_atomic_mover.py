@@ -30,8 +30,8 @@ class TestAtomicProjectionMover:
         # Mock staging files
         mock_s3_client.list_objects_v2.return_value = {
             "Contents": [
-                {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet"},
-                {"Key": f"datasets/{dataset_id}/staging/SERIES_2/year=2024/month=02/data.parquet"},
+                {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json"},
+                {"Key": f"datasets/{dataset_id}/staging/SERIES_2/year=2024/month=02/data.json"},
             ]
         }
         mock_s3_client.copy_object = Mock()
@@ -44,8 +44,8 @@ class TestAtomicProjectionMover:
 
         # Verify copy source and destination
         copy_calls = mock_s3_client.copy_object.call_args_list
-        assert copy_calls[0][1]["CopySource"]["Key"] == f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet"
-        assert copy_calls[0][1]["Key"] == f"datasets/{dataset_id}/projections/SERIES_1/year=2024/month=01/data.parquet"
+        assert copy_calls[0][1]["CopySource"]["Key"] == f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json"
+        assert copy_calls[0][1]["Key"] == f"datasets/{dataset_id}/projections/SERIES_1/year=2024/month=01/data.json"
 
     def test_move_staging_to_projections_deletes_staging_after_successful_copy(
         self, atomic_mover, mock_s3_client
@@ -54,7 +54,7 @@ class TestAtomicProjectionMover:
         dataset_id = "test_dataset"
 
         staging_files = [
-            {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet"},
+            {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json"},
         ]
 
         mock_s3_client.list_objects_v2.return_value = {"Contents": staging_files}
@@ -67,7 +67,7 @@ class TestAtomicProjectionMover:
         assert mock_s3_client.delete_object.call_count == 1
         mock_s3_client.delete_object.assert_called_with(
             Bucket="test-bucket",
-            Key=f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet",
+            Key=f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json",
         )
 
     def test_move_staging_to_projections_handles_empty_staging(
@@ -93,8 +93,8 @@ class TestAtomicProjectionMover:
         dataset_id = "test_dataset"
 
         staging_files = [
-            {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet"},
-            {"Key": f"datasets/{dataset_id}/staging/SERIES_2/year=2024/month=02/data.parquet"},
+            {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json"},
+            {"Key": f"datasets/{dataset_id}/staging/SERIES_2/year=2024/month=02/data.json"},
         ]
 
         mock_s3_client.list_objects_v2.return_value = {"Contents": staging_files}
@@ -131,7 +131,7 @@ class TestAtomicProjectionMover:
         dataset_id = "test_dataset"
 
         staging_files = [
-            {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.parquet"},
+            {"Key": f"datasets/{dataset_id}/staging/SERIES_1/year=2024/month=01/data.json"},
         ]
 
         mock_s3_client.list_objects_v2.return_value = {"Contents": staging_files}
@@ -175,7 +175,7 @@ class TestAtomicProjectionMover:
     def test_rollback_handles_delete_failure(self, atomic_mover, mock_s3_client):
         """Test that rollback handles delete failures gracefully."""
         copied_files = [
-            "datasets/test_dataset/projections/SERIES_1/year=2024/month=01/data.parquet",
+            "datasets/test_dataset/projections/SERIES_1/year=2024/month=01/data.json",
         ]
 
         error_response = {"Error": {"Code": "AccessDenied"}}

@@ -9,7 +9,7 @@ import boto3
 
 from src.domain.interfaces import Loader
 from src.infrastructure.partitioning import PartitionStrategyFactory
-from src.infrastructure.storage.parquet import ParquetWriter
+from src.infrastructure.storage.json import JSONWriter
 from src.infrastructure.versioning import ManifestManager, VersionManager
 
 logger = logging.getLogger(__name__)
@@ -37,15 +37,12 @@ class S3VersionedLoader(Loader):
 
         load_config = config.get("load", {})  # type: ignore[union-attr]
         aws_region = load_config.get("aws_region", "us-east-1")
-        compression = load_config.get("compression", "snappy")
 
         self._s3_client = s3_client or boto3.client("s3", region_name=aws_region)
 
         # Initialize components
         self._partition_strategy = PartitionStrategyFactory.create(config)
-        self._parquet_writer = ParquetWriter(
-            partition_strategy=self._partition_strategy, compression=compression
-        )
+        self._json_writer = JSONWriter(partition_strategy=self._partition_strategy)
         self._version_manager = VersionManager(
             bucket=self._bucket, s3_client=self._s3_client, aws_region=aws_region
         )
@@ -71,12 +68,12 @@ class S3VersionedLoader(Loader):
         version_id = self._version_manager.create_new_version()
         logger.info("Created version: %s", version_id)
 
-        logger.info("Writing parquet files and uploading to S3")
-        parquet_files = self._write_and_upload_parquet_files(data, version_id)
-        logger.info("Uploaded %d parquet file(s) to S3", len(parquet_files))
+        logger.info("Writing JSON files and uploading to S3")
+        json_files = self._write_and_upload_json_files(data, version_id)
+        logger.info("Uploaded %d JSON file(s) to S3", len(json_files))
 
         logger.info("Creating and saving manifest")
-        self._create_and_save_manifest(data, parquet_files, version_id)
+        self._create_and_save_manifest(data, json_files, version_id)
         logger.info("Manifest saved successfully")
 
         logger.info("Updating current version pointer to: %s", version_id)
@@ -102,36 +99,36 @@ class S3VersionedLoader(Loader):
         if not load_config.get("bucket"):
             raise ValueError("Configuration must include 'load.bucket'")
 
-    def _write_and_upload_parquet_files(
+    def _write_and_upload_json_files(
         self, data: List[Dict[str, Any]], version_id: str
     ) -> List[str]:
-        """Write parquet files to temporary directory and upload to S3.
+        """Write JSON files to temporary directory and upload to S3.
 
         Args:
             data: List of data point dictionaries.
             version_id: Version identifier.
 
         Returns:
-            List of relative parquet file paths.
+            List of relative JSON file paths.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             base_path = os.path.join(tmpdir, "data")
-            parquet_files = self._parquet_writer.write_to_parquet(data, base_path)
-            logger.info("Generated %d parquet file(s)", len(parquet_files))
+            json_files = self._json_writer.write_to_json(data, base_path)
+            logger.info("Generated %d JSON file(s)", len(json_files))
 
-            for idx, rel_path in enumerate(parquet_files, 1):
+            for idx, rel_path in enumerate(json_files, 1):
                 local_path = os.path.join(base_path, rel_path)
                 s3_key = self._build_s3_key(rel_path, version_id)
-                logger.info("Uploading file %d/%d: %s", idx, len(parquet_files), s3_key)
+                logger.info("Uploading file %d/%d: %s", idx, len(json_files), s3_key)
                 self._s3_client.upload_file(local_path, self._bucket, s3_key)
 
-            return parquet_files
+            return json_files
 
     def _build_s3_key(self, rel_path: str, version_id: str) -> str:
-        """Build S3 key for a parquet file.
+        """Build S3 key for a JSON file.
 
         Args:
-            rel_path: Relative path of the parquet file.
+            rel_path: Relative path of the JSON file.
             version_id: Version identifier.
 
         Returns:
@@ -140,23 +137,23 @@ class S3VersionedLoader(Loader):
         return f"datasets/{self._dataset_id}/versions/{version_id}/data/{rel_path}"
 
     def _create_and_save_manifest(
-        self, data: List[Dict[str, Any]], parquet_files: List[str], version_id: str
+        self, data: List[Dict[str, Any]], json_files: List[str], version_id: str
     ) -> None:
         """Create and save manifest to S3.
 
         Args:
             data: List of data point dictionaries.
-            parquet_files: List of relative parquet file paths.
+            json_files: List of relative JSON file paths.
             version_id: Version identifier.
         """
         partition_strategy_name = self._get_partition_strategy_name()
-        partitions = self._extract_partitions_from_paths(parquet_files)
+        partitions = self._extract_partitions_from_paths(json_files)
 
         manifest = self._manifest_manager.create_manifest(
             version_id=version_id,
             dataset_id=self._dataset_id,
             data=data,
-            parquet_files=parquet_files,
+            json_files=json_files,
             partitions=partitions,
             partition_strategy=partition_strategy_name,
         )
@@ -174,13 +171,13 @@ class S3VersionedLoader(Loader):
         load_config = self._config.get("load", {})  # type: ignore[union-attr]
         return load_config.get("partition_strategy", "series_year_month")
 
-    def _extract_partitions_from_paths(self, parquet_files: List[str]) -> List[str]:
-        """Extract partition paths from parquet file paths.
+    def _extract_partitions_from_paths(self, json_files: List[str]) -> List[str]:
+        """Extract partition paths from JSON file paths.
 
         Args:
-            parquet_files: List of relative parquet file paths.
+            json_files: List of relative JSON file paths.
 
         Returns:
             List of partition paths, sorted.
         """
-        return sorted(self._partition_strategy.get_all_partitions_from_paths(parquet_files))
+        return sorted(self._partition_strategy.get_all_partitions_from_paths(json_files))

@@ -1,7 +1,8 @@
 """ETL use case."""
 
 import logging
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from ..domain.interfaces import (
     Extractor,
@@ -12,6 +13,7 @@ from ..domain.interfaces import (
     StateManager,
     Transformer,
 )
+from ..infrastructure.utils.date_utils import get_window_start_date
 from .projection_use_case import ProjectionUseCase
 
 logger = logging.getLogger(__name__)
@@ -145,6 +147,8 @@ class ETLUseCase:
         data = self._execute_transform(data, config, step_number, total_steps)
         step_number += 1
 
+        data = self._apply_window_filter(data, config)
+
         self._execute_load(data, config, step_number, total_steps)
 
         logger.info("ETL pipeline completed. Total data points processed: %d", len(data))
@@ -212,6 +216,49 @@ class ETLUseCase:
             logger.info("Step %d/%d: Transform - Skipped (no transformer configured)", step_number, total_steps)
         return data
 
+    def _apply_window_filter(self, data: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Filter data by time window if configured.
+        
+        Args:
+            data: List of data points to filter.
+            config: Configuration dictionary that may contain 'windowInDays'.
+            
+        Returns:
+            Filtered list of data points within the time window.
+        """
+        window_in_days = config.get("windowInDays")
+        if window_in_days is None:
+            logger.debug("No window filter configured, processing all data")
+            return data
+        
+        window_start = get_window_start_date(window_in_days)
+        if window_start is None:
+            return data
+        
+        logger.info("Applying window filter: keeping data from last %d days (since %s)", window_in_days, window_start)
+        
+        filtered_data = []
+        for data_point in data:
+            obs_time = data_point.get("obs_time")
+            if not isinstance(obs_time, datetime):
+                logger.warning("Data point missing valid obs_time, skipping: %s", data_point.get("internal_series_code"))
+                continue
+            
+            # Normalize timezone for comparison - convert to UTC
+            if obs_time.tzinfo is None:
+                # If naive, assume UTC
+                obs_time_utc = obs_time.replace(tzinfo=timezone.utc)
+            else:
+                obs_time_utc = obs_time.astimezone(timezone.utc)
+            
+            # Compare with window_start (which is already in UTC)
+            if obs_time_utc >= window_start:
+                filtered_data.append(data_point)
+        
+        logger.info("Window filter: %d data points kept out of %d (filtered %d)", 
+                   len(filtered_data), len(data), len(data) - len(filtered_data))
+        return filtered_data
+
     def _execute_load(self, data: list, config: dict, step_number: int, total_steps: int) -> None:
         """Execute load step and projection if configured."""
         if self._loader:
@@ -273,6 +320,7 @@ class ETLUseCase:
         """
         from src.infrastructure.versioning import VersionManager
 
+        # Reuse the S3 client from the loader if available, otherwise create a new one
         s3_client = getattr(self._loader, "_s3_client", None)
         version_manager = VersionManager(
             bucket=bucket, s3_client=s3_client, aws_region=aws_region

@@ -69,7 +69,7 @@ src/
 └── infrastructure/      # Plugin implementations and adapters
     ├── plugins/         # Plugin implementations by type
     ├── partitioning/    # Partition strategies for data organization
-    ├── storage/         # Storage backends (Parquet, etc.)
+    ├── storage/         # Storage backends (JSON, etc.)
     ├── versioning/      # Version management and manifests
     ├── state_managers/  # State persistence backends
     └── lock_managers/   # Lock management backends
@@ -172,7 +172,7 @@ datasets/{dataset_id}/
     └── {version_id}/
         ├── data/
         │   └── {internal_series_code}/year={YYYY}/month={MM}/
-        │       └── data.parquet
+        │       └── data.json
         └── manifest.json  # Version metadata
 ```
 
