@@ -84,14 +84,33 @@ class AtomicProjectionMover:
         staging_prefix = f"datasets/{dataset_id}/staging/"
         projections_prefix = f"datasets/{dataset_id}/projections/"
 
+        total_files = len(staging_files)
         copied_files = []
         try:
-            for staging_key in staging_files:
+            for idx, staging_key in enumerate(staging_files, 1):
                 projections_key = self._convert_to_projections_key(
                     staging_key, staging_prefix, projections_prefix
                 )
                 self._copy_s3_file(staging_key, projections_key)
                 copied_files.append(projections_key)
+                
+                # Log progress every 100 files or at milestones (10%, 25%, 50%, 75%, 90%)
+                if idx % 100 == 0 or idx in [
+                    int(total_files * 0.1),
+                    int(total_files * 0.25),
+                    int(total_files * 0.5),
+                    int(total_files * 0.75),
+                    int(total_files * 0.9),
+                ]:
+                    progress_pct = (idx / total_files) * 100
+                    logger.info(
+                        "Copying progress: %d/%d files (%.1f%%)",
+                        idx,
+                        total_files,
+                        progress_pct,
+                    )
+            
+            logger.info("Successfully copied all %d file(s) to projections", total_files)
             return copied_files
         except Exception:  # noqa: BLE001
             logger.error("Copy failed, rolling back %d copied file(s)", len(copied_files))
@@ -130,8 +149,22 @@ class AtomicProjectionMover:
 
     def _delete_files(self, keys: List[str]) -> None:
         """Delete multiple S3 files, continuing even if individual deletes fail."""
-        for key in keys:
+        total_files = len(keys)
+        for idx, key in enumerate(keys, 1):
             self._delete_single_file(key)
+            # Log progress every 500 files or at milestones
+            if idx % 500 == 0 or idx in [
+                int(total_files * 0.25),
+                int(total_files * 0.5),
+                int(total_files * 0.75),
+            ]:
+                progress_pct = (idx / total_files) * 100
+                logger.info(
+                    "Deleting progress: %d/%d files (%.1f%%)",
+                    idx,
+                    total_files,
+                    progress_pct,
+                )
 
     def _delete_single_file(self, key: str) -> None:
         """Delete a single S3 file, logging errors but not raising."""

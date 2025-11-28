@@ -1,7 +1,6 @@
 dataset_id: indec_ipc
 provider: INDEC
 frequency: M
-windowInDays: 365
 source:
   kind: indec_ipc_http
   url_template: https://www.indec.gob.ar/ftp/cuadros/economia/sh_ipc_{MM}_{YY}.xls

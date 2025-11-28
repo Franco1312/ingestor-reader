@@ -1,7 +1,6 @@
 dataset_id: bcra_infomondia_series
 provider: BCRA
 frequency: D
-windowInDays: 365
 source:
   kind: http
   url: https://www.bcra.gob.ar/Pdfs/PublicacionesEstadisticas/series.xlsm
