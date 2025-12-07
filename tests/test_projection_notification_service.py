@@ -4,6 +4,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from src.infrastructure.notifications.projection_notification_service import (
     ProjectionNotificationService,
@@ -13,13 +14,18 @@ from src.infrastructure.notifications.projection_notification_service import (
 class TestProjectionNotificationService:
     """Tests for ProjectionNotificationService."""
 
-    def test_notify_projection_update_publishes_correct_message(self):
-        """Test that notify_projection_update publishes the correct message."""
+    def test_notify_projection_update_sends_correct_post_request(self):
+        """Test that notify_projection_update sends the correct POST request."""
         # Arrange
-        topic_arn = "arn:aws:sns:us-east-1:123456789012:projection-updates"
-        mock_sns_client = MagicMock()
+        base_url = "http://localhost:3000"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status.return_value = None
+        mock_http_client = MagicMock()
+        mock_http_client.post.return_value = mock_response
+
         service = ProjectionNotificationService(
-            topic_arn=topic_arn, sns_client=mock_sns_client
+            base_url=base_url, timeout=30.0, http_client=mock_http_client
         )
 
         dataset_id = "test_dataset"
@@ -36,27 +42,28 @@ class TestProjectionNotificationService:
         )
 
         # Assert
-        mock_sns_client.publish.assert_called_once()
-        call_args = mock_sns_client.publish.call_args
+        mock_http_client.post.assert_called_once()
+        call_args = mock_http_client.post.call_args
 
-        assert call_args.kwargs["TopicArn"] == topic_arn
-        assert call_args.kwargs["Subject"] == f"projection_update:{dataset_id}"
+        assert call_args.kwargs["url"] == f"{base_url}/api/v1/projections/update"
+        assert call_args.kwargs["headers"]["Content-Type"] == "application/json"
+        assert call_args.kwargs["timeout"] == 30.0
 
-        message = json.loads(call_args.kwargs["Message"])
-        assert message["event"] == "projection_update"
-        assert message["dataset_id"] == dataset_id
-        assert message["bucket"] == bucket
-        assert message["version_manifest_path"] == version_manifest_path
-        assert message["projections_path"] == projections_path
+        event = call_args.kwargs["json"]
+        assert event["event"] == "projection_update"
+        assert event["dataset_id"] == dataset_id
+        assert event["bucket"] == bucket
+        assert event["version_manifest_path"] == version_manifest_path
+        assert event["projections_path"] == projections_path
 
-    def test_notify_projection_update_handles_sns_error_gracefully(self):
-        """Test that notify_projection_update handles SNS errors gracefully."""
+    def test_notify_projection_update_handles_http_error_gracefully(self):
+        """Test that notify_projection_update handles HTTP errors gracefully."""
         # Arrange
-        topic_arn = "arn:aws:sns:us-east-1:123456789012:projection-updates"
-        mock_sns_client = MagicMock()
-        mock_sns_client.publish.side_effect = Exception("SNS error")
+        base_url = "http://localhost:3000"
+        mock_http_client = MagicMock()
+        mock_http_client.post.side_effect = requests.RequestException("HTTP error")
         service = ProjectionNotificationService(
-            topic_arn=topic_arn, sns_client=mock_sns_client
+            base_url=base_url, timeout=30.0, http_client=mock_http_client
         )
 
         # Act & Assert - should not raise
@@ -67,29 +74,56 @@ class TestProjectionNotificationService:
             projections_path="datasets/test_dataset/projections/",
         )
 
-        # Should have attempted to publish
-        mock_sns_client.publish.assert_called_once()
+        # Should have attempted to post
+        mock_http_client.post.assert_called_once()
 
-    def test_notify_projection_update_creates_sns_client_if_not_provided(self):
-        """Test that notify_projection_update creates SNS client if not provided."""
+    def test_notify_projection_update_uses_default_timeout(self):
+        """Test that notify_projection_update uses default timeout if not provided."""
         # Arrange
-        topic_arn = "arn:aws:sns:us-east-1:123456789012:projection-updates"
+        base_url = "http://localhost:3000"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status.return_value = None
+        mock_http_client = MagicMock()
+        mock_http_client.post.return_value = mock_response
 
-        with patch("boto3.client") as mock_boto3_client:
-            mock_sns = MagicMock()
-            mock_boto3_client.return_value = mock_sns
+        service = ProjectionNotificationService(base_url=base_url, http_client=mock_http_client)
 
-            service = ProjectionNotificationService(topic_arn=topic_arn)
+        # Act
+        service.notify_projection_update(
+            dataset_id="test_dataset",
+            bucket="test-bucket",
+            version_manifest_path="datasets/test_dataset/versions/v1/manifest.json",
+            projections_path="datasets/test_dataset/projections/",
+        )
 
-            # Act
-            service.notify_projection_update(
-                dataset_id="test_dataset",
-                bucket="test-bucket",
-                version_manifest_path="datasets/test_dataset/versions/v1/manifest.json",
-                projections_path="datasets/test_dataset/projections/",
-            )
+        # Assert
+        call_args = mock_http_client.post.call_args
+        assert call_args.kwargs["timeout"] == 30.0
 
-            # Assert
-            mock_boto3_client.assert_called_once_with("sns", region_name="us-east-1")
-            mock_sns.publish.assert_called_once()
+    def test_notify_projection_update_strips_trailing_slash_from_base_url(self):
+        """Test that notify_projection_update strips trailing slash from base_url."""
+        # Arrange
+        base_url = "http://localhost:3000/"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status.return_value = None
+        mock_http_client = MagicMock()
+        mock_http_client.post.return_value = mock_response
+
+        service = ProjectionNotificationService(
+            base_url=base_url, http_client=mock_http_client
+        )
+
+        # Act
+        service.notify_projection_update(
+            dataset_id="test_dataset",
+            bucket="test-bucket",
+            version_manifest_path="datasets/test_dataset/versions/v1/manifest.json",
+            projections_path="datasets/test_dataset/projections/",
+        )
+
+        # Assert
+        call_args = mock_http_client.post.call_args
+        assert call_args.kwargs["url"] == "http://localhost:3000/api/v1/projections/update"
 

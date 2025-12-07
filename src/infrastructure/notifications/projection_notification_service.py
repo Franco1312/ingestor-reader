@@ -1,29 +1,30 @@
-"""Projection notification service for SNS."""
+"""Projection notification service for HTTP POST."""
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
-import boto3
+import requests
 
 logger = logging.getLogger(__name__)
 
 
 class ProjectionNotificationService:
-    """Service for publishing projection update notifications to SNS."""
+    """Service for publishing projection update notifications via HTTP POST."""
 
     def __init__(
-        self, topic_arn: str, sns_client: Any = None, aws_region: str = "us-east-1"
+        self, base_url: str, timeout: float = 30.0, http_client: Any = None
     ):
         """Initialize ProjectionNotificationService.
 
         Args:
-            topic_arn: SNS topic ARN where notifications will be published.
-            sns_client: Boto3 SNS client (optional, for testing).
-            aws_region: AWS region (default: us-east-1).
+            base_url: Base URL for the notification endpoint.
+            timeout: Request timeout in seconds (default: 30.0).
+            http_client: Requests client (optional, for testing).
         """
-        self._topic_arn = topic_arn
-        self._sns_client = sns_client or boto3.client("sns", region_name=aws_region)
+        self._base_url = base_url.rstrip("/")
+        self._timeout = timeout
+        self._http_client = http_client or requests
 
     def notify_projection_update(
         self,
@@ -32,7 +33,7 @@ class ProjectionNotificationService:
         version_manifest_path: str,
         projections_path: str,
     ) -> None:
-        """Publish a projection update notification to SNS.
+        """Publish a projection update notification via HTTP POST.
 
         Args:
             dataset_id: Dataset identifier.
@@ -48,14 +49,24 @@ class ProjectionNotificationService:
             "projections_path": projections_path,
         }
 
+        url = f"{self._base_url}/api/v1/projections/update"
+
+        logger.info(
+            "Publishing projection update notification: %s to %s",
+            event,
+            url,
+        )
+
         try:
-            self._sns_client.publish(
-                TopicArn=self._topic_arn,
-                Message=json.dumps(event),
-                Subject=f"projection_update:{dataset_id}",
+            response = self._http_client.post(
+                url,
+                json=event,
+                headers={"Content-Type": "application/json"},
+                timeout=self._timeout,
             )
+            response.raise_for_status()
             logger.info(
-                "Published projection update notification for dataset %s",
+                "Successfully published projection update notification for dataset %s",
                 dataset_id,
             )
         except Exception as e:  # noqa: BLE001

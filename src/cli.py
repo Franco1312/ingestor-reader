@@ -10,7 +10,6 @@ if env_path.exists():
 
 import argparse
 import logging
-import os
 import sys
 
 import requests
@@ -30,6 +29,7 @@ from src.domain.interfaces import (
     StateManager,
     Transformer,
 )
+from src.infrastructure.config import load_config
 from src.infrastructure.config_loader import YamlConfigLoader
 from src.infrastructure.lock_managers.lock_manager_factory import LockManagerFactory
 from src.infrastructure.notifications.projection_notification_service import (
@@ -113,9 +113,9 @@ def _get_loader(registry: PluginRegistry, config: Dict[str, Any]) -> Optional[Lo
     Returns:
         Loader instance or None if not configured.
     """
-    load_config = config.get("load", {})
-    if load_config.get("plugin"):
-        return registry.get_loader(load_config["plugin"], config=config)
+    load_config_dict = config.get("load", {})
+    if load_config_dict.get("plugin"):
+        return registry.get_loader(load_config_dict["plugin"], config=config)
     return None
 
 
@@ -145,23 +145,32 @@ def _get_state_manager(config: Dict[str, Any]) -> Optional[StateManager]:
     return StateManagerFactory.create(state_config)
 
 
-def _create_notification_service(aws_region: str) -> Optional[ProjectionNotificationService]:
-    """Create notification service if SNS topic ARN is configured.
 
-    Args:
-        aws_region: AWS region.
+
+def _create_notification_service() -> Optional[ProjectionNotificationService]:
+    """Create notification service if notification config is provided.
 
     Returns:
         ProjectionNotificationService instance or None if not configured.
     """
-    topic_arn = os.environ.get("SNS_PROJECTION_TOPIC_ARN")
-    if not topic_arn:
+    config = load_config()
+    external_endpoints = config.get("externalEndpoints", {})
+    projections_api_config = external_endpoints.get("projections_consumer_api")
+    
+    if not projections_api_config:
         return None
 
+    base_url = projections_api_config.get("baseUrl")
+    if not base_url:
+        return None
+
+    # Convert timeout from milliseconds to seconds
+    timeout_ms = projections_api_config.get("timeout", 10000)
+    timeout = timeout_ms / 1000.0
+
     return ProjectionNotificationService(
-        topic_arn=topic_arn,
-        sns_client=None,
-        aws_region=aws_region,
+        base_url=base_url,
+        timeout=timeout,
     )
 
 
@@ -193,14 +202,14 @@ def _get_projection_use_case(
     if not loader:
         return None
 
-    load_config = config.get("load", {})
-    bucket = load_config.get("bucket")
-    aws_region = load_config.get("aws_region", "us-east-1")
+    load_config_dict = config.get("load", {})
+    bucket = load_config_dict.get("bucket")
+    aws_region = load_config_dict.get("aws_region", "us-east-1")
 
     if not bucket:
         return None
 
-    projection_config = load_config.get("projection", {})
+    projection_config = load_config_dict.get("projection", {})
     copy_workers = projection_config.get("copy_workers", 1)
     merge_workers = projection_config.get("merge_workers", 1)
 
@@ -214,7 +223,7 @@ def _get_projection_use_case(
             merge_workers=merge_workers,
         )
 
-        notification_service = _create_notification_service(aws_region)
+        notification_service = _create_notification_service()
 
         return ProjectionUseCase(
             projection_manager=projection_manager,

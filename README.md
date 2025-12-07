@@ -180,17 +180,31 @@ datasets/{dataset_id}/
 - `AWS_ACCESS_KEY_ID`: AWS access key (optional if using IAM roles)
 - `AWS_SECRET_ACCESS_KEY`: AWS secret key (optional if using IAM roles)
 - `AWS_REGION`: AWS region (optional, default: us-east-1)
-- `SNS_PROJECTION_TOPIC_ARN`: SNS topic ARN for projection update notifications (optional)
+- `ENVIRONMENT`: Environment name - `local`, `staging`, or `production` (default: `local`)
 
-**Example `.env` file:**
-```bash
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-AWS_REGION=us-east-1
-SNS_PROJECTION_TOPIC_ARN=arn:aws:sns:us-east-1:123456789012:projection-updates
+**Projection Notifications:**
+
+Projection update notifications are configured in environment-specific Python files:
+- `config/local.py` (default)
+- `config/staging.py`
+- `config/production.py`
+
+The file to load is determined by the `ENVIRONMENT` variable.
+
+Example configuration structure:
+
+```python
+config = {
+    "externalEndpoints": {
+        "projections_consumer_api": {
+            "baseUrl": "http://localhost:3000",
+            "timeout": 10000
+        }
+    }
+}
 ```
 
-**Note:** If `SNS_PROJECTION_TOPIC_ARN` is set, the pipeline will automatically publish SNS notifications when projections are updated.
+When `baseUrl` is configured, the pipeline will automatically send HTTP POST requests to `/api/v1/projections/update` when projections are updated. The `timeout` is specified in milliseconds.
 
 ### Adding New Plugins
 
@@ -260,10 +274,6 @@ Create an ECS Task Definition with the following configuration:
         {
           "name": "AWS_REGION",
           "value": "us-east-1"
-        },
-        {
-          "name": "SNS_PROJECTION_TOPIC_ARN",
-          "value": "arn:aws:sns:us-east-1:123456789012:projection-updates"
         }
       ],
       "logConfiguration": {
@@ -286,7 +296,6 @@ Create an ECS Task Definition with the following configuration:
 The ECS Task Role needs permissions for:
 - S3 read/write access (for data loading and state management)
 - DynamoDB read/write access (for lock management)
-- SNS publish permissions (for projection notifications, if configured)
 
 Example IAM policy:
 ```json
@@ -315,13 +324,6 @@ Example IAM policy:
       ],
       "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/your-lock-table"
     },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "sns:Publish"
-      ],
-      "Resource": "arn:aws:sns:us-east-1:123456789012:projection-updates"
-    }
   ]
 }
 ```
@@ -331,8 +333,7 @@ Example IAM policy:
 You can trigger ECS tasks using:
 
 1. **EventBridge (CloudWatch Events)**: Schedule periodic runs
-2. **SQS**: Process messages from a queue
-3. **AWS CLI**: Manual execution
+2. **AWS CLI**: Manual execution
    ```bash
    aws ecs run-task \
      --cluster your-cluster-name \

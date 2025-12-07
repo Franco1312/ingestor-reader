@@ -24,7 +24,7 @@ class ProjectionUseCase:
 
         Args:
             projection_manager: ProjectionManager instance.
-            notification_service: Optional notification service for SNS.
+            notification_service: Optional notification service for HTTP POST.
             bucket: S3 bucket name (required if notification_service is provided).
         """
         self._projection_manager = projection_manager
@@ -71,9 +71,25 @@ class ProjectionUseCase:
             version_id: Version identifier.
             dataset_id: Dataset identifier.
         """
-        if not self._notification_service or not self._bucket:
+        if not self._notification_service:
+            logger.info(
+                "Notification service not configured, skipping notification for dataset %s",
+                dataset_id,
+            )
             return
 
+        if not self._bucket:
+            logger.warning(
+                "Bucket not configured, cannot send notification for dataset %s",
+                dataset_id,
+            )
+            return
+
+        logger.info(
+            "Sending notification for new projection: version %s, dataset %s",
+            version_id,
+            dataset_id,
+        )
         self._notification_service.notify_projection_update(
             dataset_id=dataset_id,
             bucket=self._bucket,

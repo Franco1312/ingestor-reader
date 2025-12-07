@@ -3,14 +3,13 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-import boto3
-
 from src.infrastructure.projections.atomic_mover import AtomicProjectionMover
 from src.infrastructure.projections.projection_merger import ProjectionMerger
 from src.infrastructure.projections.projection_manifest_manager import (
     ProjectionManifestManager,
 )
 from src.infrastructure.projections.staging_manager import StagingManager
+from src.infrastructure.utils.aws_utils import create_s3_client
 from src.infrastructure.versioning.manifest_manager import ManifestManager
 
 logger = logging.getLogger(__name__)
@@ -37,7 +36,7 @@ class ProjectionManager:
             merge_workers: Number of parallel workers for merging partitions (default: 1).
         """
         self._bucket = bucket
-        self._s3_client = s3_client or boto3.client("s3", region_name=aws_region)
+        self._s3_client = create_s3_client(aws_region=aws_region, s3_client=s3_client)
         self._copy_workers = copy_workers
         self._merge_workers = merge_workers
 

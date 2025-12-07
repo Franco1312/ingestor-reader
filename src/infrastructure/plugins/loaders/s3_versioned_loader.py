@@ -5,11 +5,10 @@ import os
 import tempfile
 from typing import Any, Dict, List, Optional
 
-import boto3
-
 from src.domain.interfaces import Loader
 from src.infrastructure.partitioning import PartitionStrategyFactory
 from src.infrastructure.storage.json import JSONWriter
+from src.infrastructure.utils.aws_utils import create_s3_client
 from src.infrastructure.versioning import ManifestManager, VersionManager
 
 logger = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ class S3VersionedLoader(Loader):
         load_config = config.get("load", {})  # type: ignore[union-attr]
         aws_region = load_config.get("aws_region", "us-east-1")
 
-        self._s3_client = s3_client or boto3.client("s3", region_name=aws_region)
+        self._s3_client = create_s3_client(aws_region=aws_region, s3_client=s3_client)
 
         # Initialize components
         self._partition_strategy = PartitionStrategyFactory.create(config)

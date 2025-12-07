@@ -66,53 +66,6 @@ def _extract_from_eventbridge(event: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _extract_from_sqs_record(record: Dict[str, Any]) -> Optional[str]:
-    """Extract dataset_id from SQS record body.
-    
-    Args:
-        record: SQS record dictionary.
-        
-    Returns:
-        Dataset identifier if found, None otherwise.
-    """
-    body = record.get("body")
-    if not body:
-        return None
-    
-    try:
-        # Try parsing body as JSON
-        parsed_body = json.loads(body)
-        
-        # If it's a dict, check for dataset_id
-        if isinstance(parsed_body, dict):
-            return parsed_body.get("dataset_id")
-        
-        # If it's a string, try parsing again (double-encoded case)
-        if isinstance(parsed_body, str):
-            double_parsed = json.loads(parsed_body)
-            if isinstance(double_parsed, dict):
-                return double_parsed.get("dataset_id")
-    
-    except (json.JSONDecodeError, TypeError):
-        pass
-    
-    return None
-
-
-def _extract_from_sqs(event: Dict[str, Any]) -> Optional[str]:
-    """Extract dataset_id from SQS event.
-    
-    Args:
-        event: Lambda event dictionary.
-        
-    Returns:
-        Dataset identifier if found, None otherwise.
-    """
-    records = event.get("Records")
-    if not isinstance(records, list) or len(records) == 0:
-        return None
-    
-    return _extract_from_sqs_record(records[0])
 
 
 def _extract_from_environment() -> Optional[str]:
@@ -130,8 +83,7 @@ def extract_dataset_id(event: Dict[str, Any]) -> str:
     Supports multiple event sources in order of precedence:
     1. Direct invocation: {"dataset_id": "..."}
     2. EventBridge: {"detail": {"dataset_id": "..."}}
-    3. SQS: {"Records": [{"body": "{\"dataset_id\": \"...\"}"}]}
-    4. Environment variable: DATASET_ID
+    3. Environment variable: DATASET_ID
     
     Args:
         event: Lambda event dictionary.
@@ -152,11 +104,6 @@ def extract_dataset_id(event: Dict[str, Any]) -> str:
     if dataset_id:
         return dataset_id
     
-    # Try SQS
-    dataset_id = _extract_from_sqs(event)
-    if dataset_id:
-        return dataset_id
-    
     # Try environment variable
     dataset_id = _extract_from_environment()
     if dataset_id:
@@ -164,8 +111,7 @@ def extract_dataset_id(event: Dict[str, Any]) -> str:
     
     raise ValueError(
         "dataset_id not found in event. Expected one of: "
-        "event['dataset_id'], event['detail']['dataset_id'], "
-        "event['Records'][0]['body']['dataset_id'], or DATASET_ID env var"
+        "event['dataset_id'], event['detail']['dataset_id'], or DATASET_ID env var"
     )
 
 
