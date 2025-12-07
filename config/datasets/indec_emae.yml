@@ -1,0 +1,67 @@
+dataset_id: indec_emae
+provider: INDEC
+frequency: M
+source:
+  kind: indec_emae_http
+  url: https://infra.datos.gob.ar/catalog/sspm/dataset/143/distribution/143.3/download/emae-valores-anuales-indice-base-2004-mensual.csv
+  timezone: America/Argentina/Buenos_Aires
+  format: csv
+parse:
+  plugin: indec_emae
+normalize:
+  plugin: indec_emae
+  primary_keys:
+    - obs_time
+    - internal_series_code
+  timezone: America/Argentina/Buenos_Aires
+transform:
+  plugin: indec_emae
+load:
+  plugin: s3_versioned
+  bucket: ingestor-datasets
+  aws_region: us-east-1
+  partition_strategy: series_year_month
+  projection:
+    copy_workers: 10
+    merge_workers: 5
+state:
+  kind: s3
+  bucket: ingestor-datasets
+  key: datasets/indec_emae/state.json
+  aws_region: us-east-1
+lock: null
+parse_config:
+  file_type: table
+  date_column: indice_tiempo
+  series_map:
+    - internal_series_code: INDEC_EMAE_ORIGINAL_IDX_M
+      unit: idx
+      frequency: M
+      value_column: emae_original
+      drop_na: true
+    - internal_series_code: INDEC_EMAE_DESESTACIONALIZADA_IDX_M
+      unit: idx
+      frequency: M
+      value_column: emae_desestacionalizada
+      drop_na: true
+    - internal_series_code: INDEC_EMAE_TENDENCIA_CICLO_IDX_M
+      unit: idx
+      frequency: M
+      value_column: emae_tendencia_ciclo
+      drop_na: true
+    - internal_series_code: INDEC_EMAE_ORIGINAL_VARIACION_INTERANUAL_PCT_M
+      unit: pct
+      frequency: M
+      value_column: emae_original_via
+      drop_na: true
+    - internal_series_code: INDEC_EMAE_DESESTACIONALIZADA_VARIACION_MENSUAL_PCT_M
+      unit: pct
+      frequency: M
+      value_column: emae_desestacionalizada_vm
+      drop_na: true
+    - internal_series_code: INDEC_EMAE_TENDENCIA_CICLO_VARIACION_MENSUAL_PCT_M
+      unit: pct
+      frequency: M
+      value_column: emae_tendencia_ciclo_vm
+      drop_na: true
+

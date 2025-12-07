@@ -4,6 +4,9 @@ from src.application.plugin_registry import PluginRegistry
 from src.infrastructure.plugins.transformers.bcra_infomondia_transformer import (
     BcraInfomondiaTransformer,
 )
+from src.infrastructure.plugins.transformers.indec_emae_transformer import (
+    IndecEmaeTransformer,
+)
 from src.infrastructure.plugins.transformers.indec_ipc_transformer import (
     IndecIpcTransformer,
 )
@@ -17,3 +20,4 @@ def register_transformers(registry: PluginRegistry) -> None:
     """
     registry.register_transformer("bcra_infomondia", BcraInfomondiaTransformer)
     registry.register_transformer("indec_ipc", IndecIpcTransformer)
+    registry.register_transformer("indec_emae", IndecEmaeTransformer)
