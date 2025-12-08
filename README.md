@@ -373,6 +373,70 @@ The project includes GitHub Actions workflows for automated deployment:
 - Push to main/master → Tests → Build → Push to ECR → Deploy to ECS
 - Pull Request → Tests → Validate Docker build (no deployment)
 
+### Render Deployment
+
+The application can be deployed to Render as a Web Service with HTTP API using the `render.yaml` configuration file.
+
+#### Quick Start
+
+1. **Using Blueprint (Recommended)**
+   - Push your code to a Git repository (GitHub, GitLab, or Bitbucket)
+   - Go to [Render Dashboard](https://dashboard.render.com/)
+   - Click "New +" → "Blueprint"
+   - Connect your repository
+   - Render will automatically detect `render.yaml` and create the Web Service
+   - Configure environment variables in the Render dashboard (see `RENDER_DEPLOYMENT.md`)
+
+2. **Manual Setup**
+   - See `RENDER_DEPLOYMENT.md` for detailed instructions
+
+#### Web Service API
+
+The Web Service exposes an HTTP API for triggering ETL pipelines:
+
+**Endpoints:**
+- `GET /health` - Health check endpoint
+- `GET /api/v1/datasets` - List all available datasets
+- `POST /api/v1/etl/<dataset_id>` - Execute ETL for a specific dataset
+- `POST /api/v1/etl` - Execute ETL with dataset_id in request body
+
+**Example:**
+```bash
+# Health check
+curl https://your-service.onrender.com/health
+
+# List datasets
+curl https://your-service.onrender.com/api/v1/datasets
+
+# Execute ETL
+curl -X POST https://your-service.onrender.com/api/v1/etl/bcra_infomondia_series
+```
+
+#### Environment Variables
+
+Configure these in the Render dashboard:
+
+**Required:**
+- `ENVIRONMENT`: `production` or `staging`
+- `AWS_ACCESS_KEY_ID`: Your AWS access key
+- `AWS_SECRET_ACCESS_KEY`: Your AWS secret key
+- `AWS_REGION`: AWS region (e.g., `us-east-1`)
+
+#### Scheduling Executions
+
+Each pipeline has its own execution period. Configure external cronjobs to trigger each dataset independently:
+
+- Use services like [Cron-job.org](https://cron-job.org/), [EasyCron](https://www.easycron.com/), or [UptimeRobot](https://uptimerobot.com/)
+- Each cronjob makes a POST request to `/api/v1/etl/<dataset_id>` at its scheduled time
+- This provides scalability and independent control over each pipeline
+
+**Example cronjob configuration:**
+- URL: `https://your-service.onrender.com/api/v1/etl/bcra_infomondia_series`
+- Method: POST
+- Frequency: Daily at 3:00 AM
+
+For more details, see `RENDER_DEPLOYMENT.md`.
+
 
 ## Architecture Principles
 
